@@ -252,4 +252,8 @@ Ceded portion as reinsurance asset
 - **Monthly VTD Publications** - Vector tasa de descuento (critical for discount rates)
 - **Historical TM Rates** - Beyond 2025 publication (needed for calce)
 
+- **VTD_2025_.xlsx** - Vector Tasa de Descuento (2020-2025 monthly data)
+- **Monthly VTD Publications** - Future VTD vector updates beyond 2025
+- **Historical TM Rates** - Beyond 2025 publication (needed for calce)
+
 This normative framework provides complete regulatory analysis with clear documentation status and implementation strategy for full CMF compliance.
