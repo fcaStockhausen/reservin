@@ -1,0 +1,59 @@
+{
+  "database": {
+    "path": "./data/reservas.db",
+    "max_open_conns": 10,
+    "max_idle_conns": 5,
+    "conn_max_lifetime": 3600000000000
+  },
+  "server": {
+    "host": "localhost",
+    "port": 8080,
+    "read_timeout": 30000000000,
+    "write_timeout": 30000000000,
+    "idle_timeout": 120000000000
+  },
+  "logging": {
+    "level": "info",
+    "format": "json",
+    "output": "stdout",
+    "filename": "reservas.log",
+    "max_size": 100,
+    "max_backups": 5,
+    "max_age": 30
+  },
+  "calculation": {
+    "max_workers": 4,
+    "timeout": 300000000000,
+    "precision": 8,
+    "decimal_places": 2,
+    "batch_size": 1000,
+    "parallel_policy": 100
+  },
+  "data": {
+    "mortality_tables": {
+      "path": "./data/normativo/articles-20210_tablas_mort_hist.xlsx",
+      "format": "xlsx",
+      "encoding": "utf-8",
+      "enabled": true
+    },
+    "vtd_data": {
+      "path": "./data/normativo/VTD_2025_.xlsx",
+      "format": "xlsx",
+      "encoding": "utf-8",
+      "enabled": true
+    },
+    "tm_rates": {
+      "path": "./data/normativo/tm_rates.csv",
+      "format": "csv",
+      "encoding": "utf-8",
+      "enabled": false
+    },
+    "policy_data": {
+      "path": "./data/policies.xlsx",
+      "format": "xlsx",
+      "encoding": "utf-8",
+      "enabled": false
+    },
+    "backup_path": "./data/backups"
+  }
+}
