@@ -8,7 +8,7 @@ This repository follows a consolidated documentation approach with **4 source of
 
 ### 📋 CRUSH.md
 **Purpose:** Agent development guide and project overview
-**Contents:** Technology stack, build commands, Git workflow, professional standards
+**Contents:** Technology stack, build commands, Git workflow, professional standards, implementation planning
 
 ### 🛠️ technical_specifications.md
 **Purpose:** Complete technical implementation requirements
@@ -21,6 +21,10 @@ This repository follows a consolidated documentation approach with **4 source of
 ### 🚀 deployment_guide.md
 **Purpose:** Production deployment and operations
 **Contents:** Build process, installation scripts, service management, monitoring, troubleshooting
+
+### 📝 implementation_plan.md
+**Purpose:** Complete 8-week implementation roadmap
+**Contents:** Phase-by-phase development plan, technical details, risk management, success criteria
 
 ## Supporting Analysis
 
@@ -38,6 +42,7 @@ This repository follows a consolidated documentation approach with **4 source of
 
 | Need | Document | Section |
 |------|----------|---------|
+| **Implementation plan** | implementation_plan.md | Complete 8-week roadmap |
 | **Development setup** | CRUSH.md | Development Environment |
 | **Mathematical formulas** | technical_specifications.md | Core Mathematical Formulas |
 | **CMF compliance** | normative_framework.md | Core Regulatory Requirements |
