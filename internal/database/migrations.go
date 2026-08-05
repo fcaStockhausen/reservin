@@ -24,7 +24,7 @@ func NewMigrator(db *sql.DB) *Migrator {
 	return &Migrator{
 		db: db,
 		migrations: []Migration{
-			{
+			Migration{
 				Version:     1,
 				Description: "Create initial schema",
 				SQL: []string{
@@ -105,6 +105,26 @@ func NewMigrator(db *sql.DB) *Migrator {
 						version INTEGER PRIMARY KEY,
 						description TEXT NOT NULL,
 						applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+					);`,
+				},
+			},
+			Migration{
+				Version:     2,
+				Description: "Add beneficiario table for family group modeling",
+				SQL: []string{
+					`-- Family group members per policy (causante + beneficiaries)
+					CREATE TABLE IF NOT EXISTS beneficiario (
+						id INTEGER PRIMARY KEY AUTOINCREMENT,
+						poliza_id INTEGER NOT NULL,
+						rol VARCHAR(20) NOT NULL,
+						sexo CHAR(1) NOT NULL,
+						edad_contratacion INTEGER NOT NULL,
+						fecha_nacimiento DATE,
+						tabla_asignada VARCHAR(50),
+						porcentaje_renta DECIMAL(5,4),
+						estado VARCHAR(10) DEFAULT 'ACTIVO',
+						created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+						FOREIGN KEY (poliza_id) REFERENCES poliza(id) ON DELETE CASCADE
 					);`,
 				},
 			},
@@ -197,24 +217,29 @@ func (m *Migrator) createIndexes(tx *sql.Tx) error {
 		`CREATE INDEX IF NOT EXISTS idx_mortalidad_nombre_edad ON tabla_mortalidad(nombre_estandar, edad);`,
 		`CREATE INDEX IF NOT EXISTS idx_mortalidad_vigencia ON tabla_mortalidad(vigencia_inicio, vigencia_fin);`,
 		`CREATE INDEX IF NOT EXISTS idx_mortalidad_sexo ON tabla_mortalidad(sexo);`,
-		
+
 		// VTD vector indexes
 		`CREATE INDEX IF NOT EXISTS idx_vtd_year_month ON vtd_vector(year, month);`,
 		`CREATE INDEX IF NOT EXISTS idx_vtd_publication ON vtd_vector(publication_date);`,
 		`CREATE INDEX IF NOT EXISTS idx_vtd_period ON vtd_vector(period);`,
-		
+
 		// Policy indexes
 		`CREATE INDEX IF NOT EXISTS idx_poliza_estado ON poliza(estado);`,
 		`CREATE INDEX IF NOT EXISTS idx_poliza_fecha_inicio ON poliza(fecha_inicio);`,
 		`CREATE INDEX IF NOT EXISTS idx_poliza_numero ON poliza(numero_poliza);`,
-		
+
 		// Reserve calculation indexes
 		`CREATE INDEX IF NOT EXISTS idx_reserva_poliza_fecha ON reserva_calculada(poliza_id, fecha_calculo);`,
 		`CREATE INDEX IF NOT EXISTS idx_reserva_fecha_calculo ON reserva_calculada(fecha_calculo);`,
-		
+
 		// Audit trail indexes
 		`CREATE INDEX IF NOT EXISTS idx_audit_poliza_fecha ON audit_trail(poliza_id, calculation_date);`,
 		`CREATE INDEX IF NOT EXISTS idx_audit_metodologia ON audit_trail(methodology);`,
+
+		// Beneficiario indexes
+		`CREATE INDEX IF NOT EXISTS idx_beneficiario_poliza ON beneficiario(poliza_id);`,
+		`CREATE INDEX IF NOT EXISTS idx_beneficiario_rol ON beneficiario(rol);`,
+		`CREATE INDEX IF NOT EXISTS idx_beneficiario_estado ON beneficiario(estado);`,
 	}
 
 	for _, indexSQL := range indexes {
@@ -264,7 +289,7 @@ func (m *Migrator) GetMigrationHistory() ([]MigrationRecord, error) {
 
 // MigrationRecord represents a migration record
 type MigrationRecord struct {
-	Version     int       `json:"version"`
-	Description string    `json:"description"`
-	AppliedAt   string    `json:"applied_at"`
+	Version     int    `json:"version"`
+	Description string `json:"description"`
+	AppliedAt   string `json:"applied_at"`
 }

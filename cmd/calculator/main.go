@@ -5,9 +5,15 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"time"
 
+	"github.com/shopspring/decimal"
+
+	"reservas/internal/calculator"
 	"reservas/internal/config"
 	"reservas/internal/database"
+	"reservas/internal/loader"
+	"reservas/internal/models"
 )
 
 const (
@@ -23,6 +29,10 @@ func main() {
 	migrateFlag := flag.Bool("migrate", false, "Run database migrations")
 	importFlag := flag.String("import", "", "Import data from file (mortality|vtd)")
 	statsFlag := flag.Bool("stats", false, "Show database statistics")
+	seedFlag := flag.Bool("seed-demo", false, "Create a demo policy with family group")
+	familiaFlag := flag.String("familia", "", "Show family group for policy ID")
+	calcFlag := flag.String("calc", "", "Calculate reserve for policy ID")
+	exportFlag := flag.String("calc-export", "", "Calculate and export flows to Excel (policy ID)")
 
 	flag.Parse()
 
@@ -59,9 +69,17 @@ func main() {
 	case *migrateFlag:
 		handleMigrate(db)
 	case *importFlag != "":
-		handleImport(db, *importFlag)
+		handleImport(db, cfg, *importFlag)
 	case *statsFlag:
 		handleStats(db)
+	case *familiaFlag != "":
+		handleFamilia(db, *familiaFlag)
+	case *seedFlag:
+		handleSeedDemo(db)
+	case *calcFlag != "":
+		handleCalc(db, *calcFlag, "")
+	case *exportFlag != "":
+		handleCalc(db, *exportFlag, "export")
 	default:
 		fmt.Println("Use -help for available commands")
 		fmt.Println("Available options:")
@@ -69,6 +87,10 @@ func main() {
 		fmt.Println("  -migrate           Run migrations")
 		fmt.Println("  -import <type>     Import data (mortality|vtd)")
 		fmt.Println("  -stats             Show database statistics")
+		fmt.Println("  -seed-demo         Create demo policy with family group")
+		fmt.Println("  -familia <id>      Show family group for policy")
+		fmt.Println("  -calc <id>         Calculate reserve for policy")
+		fmt.Println("  -calc-export <id>  Calculate and export flows to Excel")
 		fmt.Println("  -version           Show version")
 		fmt.Println("  -config <path>     Configuration file path")
 	}
@@ -106,34 +128,43 @@ func handleMigrate(db *database.DB) {
 	} else {
 		fmt.Println("Migration history:")
 		for _, record := range history {
-			fmt.Printf("  Version %d: %s (applied: %s)\n", 
+			fmt.Printf("  Version %d: %s (applied: %s)\n",
 				record.Version, record.Description, record.AppliedAt)
 		}
 	}
 }
 
-func handleImport(db *database.DB, importType string) {
+func handleImport(db *database.DB, cfg config.Config, importType string) {
 	fmt.Printf("Importing %s data...\n", importType)
 
 	switch importType {
 	case "mortality":
-		handleImportMortality(db)
+		handleImportMortality(db, cfg)
 	case "vtd":
-		handleImportVTD(db)
+		handleImportVTD(db, cfg)
 	default:
 		log.Fatalf("Unknown import type: %s. Use 'mortality' or 'vtd'", importType)
 	}
 }
 
-func handleImportMortality(db *database.DB) {
-	fmt.Println("Importing mortality tables from Excel...")
-	
-	// TODO: Implement Excel import for mortality tables
-	fmt.Println("Mortality table import not yet implemented")
-	
-	// Create mortality repository
+func handleImportMortality(db *database.DB, cfg config.Config) {
+	path := cfg.Data.MortalityTables.Path
+	fmt.Printf("Importing mortality tables from %s...\n", path)
+
+	ld := loader.NewMortalityLoader(path)
+	records, err := ld.Load()
+	if err != nil {
+		log.Fatalf("Failed to parse mortality Excel: %v", err)
+	}
+	fmt.Printf("Parsed %d mortality records from Excel\n", len(records))
+
 	repo := database.NewMortalityRepository(db.DB)
-	
+	if err := repo.BatchInsert(records); err != nil {
+		log.Fatalf("Failed to insert mortality records: %v", err)
+	}
+
+	fmt.Printf("Successfully imported %d mortality records\n", len(records))
+
 	// Show statistics after import
 	stats, err := repo.GetStatistics()
 	if err != nil {
@@ -146,15 +177,24 @@ func handleImportMortality(db *database.DB) {
 	}
 }
 
-func handleImportVTD(db *database.DB) {
-	fmt.Println("Importing VTD vectors from Excel...")
-	
-	// TODO: Implement Excel import for VTD data
-	fmt.Println("VTD vector import not yet implemented")
-	
-	// Create VTD repository
+func handleImportVTD(db *database.DB, cfg config.Config) {
+	path := cfg.Data.VTDData.Path
+	fmt.Printf("Importing VTD vectors from %s...\n", path)
+
+	ld := loader.NewVTDLoader(path)
+	points, err := ld.Load()
+	if err != nil {
+		log.Fatalf("Failed to parse VTD Excel: %v", err)
+	}
+	fmt.Printf("Parsed %d VTD points from Excel\n", len(points))
+
 	repo := database.NewVTDRepository(db.DB)
-	
+	if err := repo.BatchInsert(points); err != nil {
+		log.Fatalf("Failed to insert VTD points: %v", err)
+	}
+
+	fmt.Printf("Successfully imported %d VTD points\n", len(points))
+
 	// Show statistics after import
 	stats, err := repo.GetStatistics()
 	if err != nil {
@@ -163,9 +203,11 @@ func handleImportVTD(db *database.DB) {
 		fmt.Println("VTD vector statistics:")
 		fmt.Printf("  Total vectors: %d\n", stats.TotalVectors)
 		fmt.Printf("  Total points: %d\n", stats.TotalPoints)
-		fmt.Printf("  Date range: %s to %s\n", 
-			stats.DateRange.Start.Format("2006-01-02"), 
-			stats.DateRange.End.Format("2006-01-02"))
+		if !stats.DateRange.Start.IsZero() {
+			fmt.Printf("  Date range: %s to %s\n",
+				stats.DateRange.Start.Format("2006-01-02"),
+				stats.DateRange.End.Format("2006-01-02"))
+		}
 	}
 }
 
@@ -204,8 +246,8 @@ func handleStats(db *database.DB) {
 		fmt.Println("\nVTD vectors:")
 		fmt.Printf("  Total vectors: %d\n", vtdStats.TotalVectors)
 		fmt.Printf("  Total points: %d\n", vtdStats.TotalPoints)
-		fmt.Printf("  Date range: %s to %s\n", 
-			vtdStats.DateRange.Start.Format("2006-01-02"), 
+		fmt.Printf("  Date range: %s to %s\n",
+			vtdStats.DateRange.Start.Format("2006-01-02"),
 			vtdStats.DateRange.End.Format("2006-01-02"))
 	}
 
@@ -219,5 +261,249 @@ func handleStats(db *database.DB) {
 		for key, value := range policyStats {
 			fmt.Printf("  %s: %v\n", key, value)
 		}
+	}
+
+	// Get beneficiario stats
+	benRepo := database.NewBeneficiarioRepository(db.DB)
+	benStats, err := benRepo.GetStatistics()
+	if err != nil {
+		log.Printf("Warning: Failed to get beneficiario statistics: %v", err)
+	} else {
+		fmt.Println("\nBeneficiarios:")
+		for key, value := range benStats {
+			fmt.Printf("  %s: %v\n", key, value)
+		}
+	}
+}
+
+func handleSeedDemo(db *database.DB) {
+	fmt.Println("Creating demo policy with family group...")
+
+	policyRepo := database.NewPolicyRepository(db.DB)
+
+	if existing, _ := policyRepo.GetByNumeroPoliza("DEMO-001"); existing != nil {
+		fmt.Printf("Demo policy already exists (ID: %d). Use -familia %d to view.\n", existing.ID, existing.ID)
+		return
+	}
+
+	policy := models.Policy{
+		NumeroPoliza:     "DEMO-001",
+		TipoRenta:        "VITALICIA",
+		FechaInicio:      time.Date(2023, 3, 15, 0, 0, 0, 0, time.UTC),
+		EdadContratante:  65,
+		SexoBeneficiario: "M",
+		CapitalAsegurado: decimal.NewFromFloat(50000000),
+		FormaPago:        "MENSUAL",
+		TasaTM:           decimal.NewFromFloat(0.038),
+		TasaTC:           decimal.NewFromFloat(0.035),
+		Estado:           "ACTIVA",
+	}
+	policy.TasaDescuento = decimal.Min(policy.TasaTM, policy.TasaTC)
+
+	polizaID, err := policyRepo.Insert(policy)
+	if err != nil {
+		log.Fatalf("Failed to create demo policy: %v", err)
+	}
+	fmt.Printf("Created policy DEMO-001 (ID: %d)\n", polizaID)
+
+	methodology := policy.GetMethodology()
+	members := []models.Beneficiario{
+		{
+			PolizaID:         polizaID,
+			Rol:              models.RolCausante,
+			Sexo:             "M",
+			EdadContratacion: 65,
+			PorcentajeRenta:  decimal.NewFromFloat(1.0),
+			Estado:           "ACTIVO",
+		},
+		{
+			PolizaID:         polizaID,
+			Rol:              models.RolConyuge,
+			Sexo:             "H",
+			EdadContratacion: 68,
+			PorcentajeRenta:  decimal.NewFromFloat(0.60),
+			Estado:           "ACTIVO",
+		},
+		{
+			PolizaID:         polizaID,
+			Rol:              models.RolHijo,
+			Sexo:             "H",
+			EdadContratacion: 20,
+			PorcentajeRenta:  decimal.NewFromFloat(0.40),
+			Estado:           "ACTIVO",
+		},
+	}
+
+	for i := range members {
+		tipoTabla := ""
+		if members[i].Rol == models.RolCausante {
+			tipoTabla = string(models.TableTypeVejez)
+		}
+		members[i].TablaAsignada = models.SelectTableForBeneficiario(
+			members[i].Rol, members[i].Sexo, methodology, tipoTabla,
+		)
+	}
+
+	benRepo := database.NewBeneficiarioRepository(db.DB)
+	if err := benRepo.BatchInsert(members); err != nil {
+		log.Fatalf("Failed to insert family group: %v", err)
+	}
+
+	fmt.Printf("Created family group with %d members\n", len(members))
+	fmt.Println("\nFamily group details:")
+	for _, m := range members {
+		fmt.Printf("  %s | %s | edad %d | tabla %s | %.0f%% renta\n",
+			m.Rol, m.Sexo, m.EdadContratacion, m.TablaAsignada,
+			m.PorcentajeRenta.Mul(decimal.NewFromInt(100)).InexactFloat64())
+	}
+	fmt.Printf("\nUse -familia %d to view the group anytime.\n", polizaID)
+}
+
+func handleFamilia(db *database.DB, polizaIDStr string) {
+	var polizaID int
+	if _, err := fmt.Sscanf(polizaIDStr, "%d", &polizaID); err != nil {
+		log.Fatalf("Invalid policy ID: %s", polizaIDStr)
+	}
+
+	policyRepo := database.NewPolicyRepository(db.DB)
+	policy, err := policyRepo.GetByID(polizaID)
+	if err != nil {
+		log.Fatalf("Policy not found: %v", err)
+	}
+
+	fmt.Printf("Policy: %s (ID: %d)\n", policy.NumeroPoliza, policy.ID)
+	fmt.Printf("  Tipo: %s | Inicio: %s | Sexo: %s | Edad: %d\n",
+		policy.TipoRenta, policy.FechaInicio.Format("2006-01-02"),
+		policy.SexoBeneficiario, policy.EdadContratante)
+	fmt.Printf("  Capital: %s | TM: %s%% | TC: %s%%\n",
+		policy.CapitalAsegurado.String(),
+		policy.TasaTM.Mul(decimal.NewFromInt(100)).StringFixed(2),
+		policy.TasaTC.Mul(decimal.NewFromInt(100)).StringFixed(2))
+	fmt.Printf("  Methodology: %s\n", policy.GetMethodology())
+
+	benRepo := database.NewBeneficiarioRepository(db.DB)
+	gf, err := benRepo.GetGrupoFamiliar(polizaID)
+	if err != nil {
+		log.Fatalf("Failed to get family group: %v", err)
+	}
+
+	if gf.Causante == nil && !gf.HasBeneficiarios() {
+		fmt.Println("\nNo family group members found for this policy.")
+		return
+	}
+
+	fmt.Println("\nFamily group:")
+	if gf.Causante != nil {
+		printMember(gf.Causante, true)
+	}
+	for _, b := range gf.Beneficiarios {
+		printMember(b, false)
+	}
+
+	mortRepo := database.NewMortalityRepository(db.DB)
+	for _, m := range gf.AllMembers() {
+		tables, err := mortRepo.GetByStandardName(m.TablaAsignada)
+		if err != nil || len(tables) == 0 {
+			fmt.Printf("\nWARNING: Table %s not found in database for %s!",
+				m.TablaAsignada, m.Rol)
+		}
+	}
+}
+
+func printMember(b *models.Beneficiario, isCausante bool) {
+	pct := b.PorcentajeRenta.Mul(decimal.NewFromInt(100)).StringFixed(1)
+	birthDate := "N/A"
+	if b.FechaNacimiento != nil {
+		birthDate = b.FechaNacimiento.Format("2006-01-02")
+	}
+	label := ""
+	if isCausante {
+		label = " <-- CAUSANTE"
+	}
+	fmt.Printf("  [%s] sexo: %s | edad: %d | nac: %s | tabla: %s | renta: %s%% | estado: %s%s\n",
+		b.Rol, b.Sexo, b.EdadContratacion,
+		birthDate, b.TablaAsignada, pct, b.Estado, label)
+}
+
+func handleCalc(db *database.DB, polizaIDStr string, mode string) {
+	var polizaID int
+	if _, err := fmt.Sscanf(polizaIDStr, "%d", &polizaID); err != nil {
+		log.Fatalf("Invalid policy ID: %s", polizaIDStr)
+	}
+
+	policyRepo := database.NewPolicyRepository(db.DB)
+	policy, err := policyRepo.GetByID(polizaID)
+	if err != nil {
+		log.Fatalf("Policy not found: %v", err)
+	}
+
+	benRepo := database.NewBeneficiarioRepository(db.DB)
+	grupo, err := benRepo.GetGrupoFamiliar(polizaID)
+	if err != nil {
+		log.Fatalf("Failed to get family group: %v", err)
+	}
+	if grupo.Causante == nil {
+		log.Fatalf("Policy has no causante in family group")
+	}
+
+	mortRepo := database.NewMortalityRepository(db.DB)
+	calc := calculator.NewReserveCalculator(mortRepo)
+
+	// Step 1: Project with unitary rent (R=1) to compute the annuity factor.
+	// This gives us the factor by which we divide the capital to get the annual pension.
+	unitResult, err := calc.Calculate(*policy, grupo, decimal.NewFromInt(1))
+	if err != nil {
+		log.Fatalf("Annuity factor calculation failed: %v", err)
+	}
+	annuityFactor := unitResult.TotalReserve
+
+	if annuityFactor.LessThanOrEqual(decimal.Zero) {
+		log.Fatalf("Annuity factor is zero or negative — check mortality tables")
+	}
+
+	// Step 2: Derive the annual pension from the capital and annuity factor.
+	rentaAnual := policy.CapitalAsegurado.Div(annuityFactor)
+
+	// Step 3: Project real flows with the derived pension.
+	result, err := calc.Calculate(*policy, grupo, rentaAnual)
+	if err != nil {
+		log.Fatalf("Reserve calculation failed: %v", err)
+	}
+
+	discountRate := policy.GetEffectiveDiscountRate()
+
+	fmt.Printf("Policy: %s (ID: %d)\n", policy.NumeroPoliza, policy.ID)
+	fmt.Printf("  Capital:        $%s\n", policy.CapitalAsegurado.StringFixed(0))
+	fmt.Printf("  Renta anual:    $%s\n", rentaAnual.StringFixed(0))
+	fmt.Printf("  Renta mensual:  $%s\n", rentaAnual.Div(decimal.NewFromInt(12)).StringFixed(0))
+	fmt.Printf("  Tasa descuento: %s%% (min TM %s%% / TC %s%%)\n",
+		discountRate.Mul(decimal.NewFromInt(100)).StringFixed(4),
+		policy.TasaTM.Mul(decimal.NewFromInt(100)).StringFixed(2),
+		policy.TasaTC.Mul(decimal.NewFromInt(100)).StringFixed(2))
+	fmt.Printf("  Metodologia:    %s\n", policy.GetMethodology())
+	fmt.Printf("  Periodos:       %d\n", result.Periods)
+	fmt.Printf("  Flujos totales: %d\n", len(result.Flows))
+	fmt.Printf("  RESERVA VPP:    $%s\n", result.TotalReserve.StringFixed(2))
+
+	// Breakdown by role
+	byRole := make(map[string]decimal.Decimal)
+	for _, f := range result.Flows {
+		byRole[f.MemberRol] = byRole[f.MemberRol].Add(f.PresentValue)
+	}
+	fmt.Println("\n  Desglose por rol:")
+	for _, m := range grupo.AllMembers() {
+		vp := byRole[string(m.Rol)]
+		fmt.Printf("    %s (%s, tabla %s): $%s\n",
+			m.Rol, m.Sexo, m.TablaAsignada, vp.StringFixed(2))
+	}
+
+	if mode == "export" {
+		outputPath := fmt.Sprintf("flujos_poliza_%d.xlsx", polizaID)
+		if err := calculator.ExportFlowsToExcel(result, outputPath); err != nil {
+			log.Fatalf("Excel export failed: %v", err)
+		}
+		fmt.Printf("\nFlujos exportados a: %s\n", outputPath)
+		fmt.Println("  Sheet 'Flujos': flujo a flujo desagregado por miembro")
+		fmt.Println("  Sheet 'Resumen': VP total por rol y reserva total")
 	}
 }

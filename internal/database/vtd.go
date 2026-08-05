@@ -321,13 +321,22 @@ func (r *VTDRepository) GetStatistics() (*models.VTDStatistics, error) {
 		stats.Years[year] = true
 	}
 
-	// Get date range
+	// Get date range (stored as text in SQLite, parse after scanning)
+	var minDate, maxDate string
 	err = r.db.QueryRow(`
 		SELECT MIN(publication_date), MAX(publication_date)
 		FROM vtd_vector
-	`).Scan(&stats.DateRange.Start, &stats.DateRange.End)
+	`).Scan(&minDate, &maxDate)
 	if err != nil {
 		return nil, err
+	}
+	stats.DateRange.Start, _ = time.Parse("2006-01-02 15:04:05Z07:00", minDate)
+	stats.DateRange.End, _ = time.Parse("2006-01-02 15:04:05Z07:00", maxDate)
+	if stats.DateRange.Start.IsZero() {
+		stats.DateRange.Start, _ = time.Parse("2006-01-02", minDate)
+	}
+	if stats.DateRange.End.IsZero() {
+		stats.DateRange.End, _ = time.Parse("2006-01-02", maxDate)
 	}
 
 	return stats, nil
