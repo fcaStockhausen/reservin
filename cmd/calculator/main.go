@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"runtime"
 	"time"
 
 	"github.com/shopspring/decimal"
@@ -15,6 +16,7 @@ import (
 	"reservas/internal/generator"
 	"reservas/internal/loader"
 	"reservas/internal/models"
+	"reservas/internal/portfolio"
 	"reservas/internal/scenario"
 )
 
@@ -38,6 +40,7 @@ func main() {
 	scenarioFlag := flag.String("scenario", "", "Run simulation from YAML file or builtin name")
 	scenarioAllFlag := flag.Bool("scenario-all", false, "Run all builtin scenarios and compare")
 	genRisFlag := flag.String("gen-ris", "", "Generate RIS file for policy ID")
+	stressFlag := flag.String("stress", "", "Stress test: generate N policies and calculate (e.g. 1000)")
 
 	flag.Parse()
 
@@ -91,6 +94,8 @@ func main() {
 		handleScenarioAll(db)
 	case *genRisFlag != "":
 		handleGenRIS(db, *genRisFlag)
+	case *stressFlag != "":
+		handleStress(db, *stressFlag)
 	default:
 		fmt.Println("Use -help for available commands")
 		fmt.Println("Available options:")
@@ -105,6 +110,7 @@ func main() {
 		fmt.Println("  -scenario <name>    Run simulation (YAML file or builtin name)")
 		fmt.Println("  -scenario-all       Run all builtin scenarios and compare")
 		fmt.Println("  -gen-ris <id>       Generate RIS file for policy")
+		fmt.Println("  -stress <N>         Generate N policies and stress test")
 		fmt.Println("  -version           Show version")
 		fmt.Println("  -config <path>     Configuration file path")
 	}
@@ -755,4 +761,121 @@ func handleGenRIS(db *database.DB, polizaIDStr string) {
 		policy.NumeroPoliza, policy.TipoPension, policy.ModalidadRenta)
 	fmt.Printf("  Registro 3: %d personas\n", len(members))
 	fmt.Println("  Registro 4: Totales")
+}
+
+func handleStress(db *database.DB, nStr string) {
+	var n int
+	if _, err := fmt.Sscanf(nStr, "%d", &n); err != nil || n <= 0 {
+		log.Fatalf("Invalid count: %s (use a positive integer)", nStr)
+	}
+
+	fmt.Printf("STRESS TEST: %d polizas\n", n)
+	fmt.Println(repeat("=", 70))
+
+	// Show archetype distribution
+	fmt.Println("Family archetypes:")
+	for _, line := range portfolio.ArchetypeSummary() {
+		fmt.Println(line)
+	}
+
+	// Generate portfolio
+	fmt.Printf("\nGenerating %d policies...\n", n)
+	genStart := time.Now()
+	policies := portfolio.Generate(n)
+	genDuration := time.Since(genStart)
+	fmt.Printf("Generated in %v (%.0f policies/sec)\n", genDuration, float64(n)/genDuration.Seconds())
+
+	// Count total members
+	totalMembers := 0
+	for _, p := range policies {
+		totalMembers += len(p.Members)
+	}
+	fmt.Printf("Total family members: %d (avg %.1f per policy)\n", totalMembers, float64(totalMembers)/float64(n))
+
+	// Run batch calculation
+	workers := runtime.NumCPU()
+	fmt.Printf("\nCalculating reserves with %d workers...\n", workers)
+	mortRepo := database.NewMortalityRepository(db.DB)
+
+	report := portfolio.CalculateBatch(policies, mortRepo, workers)
+
+	// Print results
+	fmt.Println(repeat("=", 70))
+	fmt.Println("RESULTS")
+	fmt.Println(repeat("=", 70))
+	fmt.Printf("  Policies:      %d total / %d success / %d failed\n",
+		report.TotalPolicies, report.Successful, report.Failed)
+	fmt.Printf("  Total reserve: %s UF\n", report.TotalReserve.StringFixed(2))
+	fmt.Printf("  Avg reserve:   %s UF\n", report.AvgReserve.StringFixed(2))
+	fmt.Printf("  Max reserve:   %s UF\n", report.MaxReserve.StringFixed(2))
+	fmt.Printf("  Min reserve:   %s UF\n", report.MinReserve.StringFixed(2))
+	fmt.Printf("  Avg calc time: %v per policy\n", report.AvgDuration)
+	fmt.Printf("  Total time:    %v\n", report.TotalDuration)
+	fmt.Printf("  Throughput:    %.0f policies/sec\n", report.ThroughputPerSec)
+	fmt.Printf("  Peak memory:   %.1f MB\n", report.PeakMemoryMB)
+
+	// Distribution histogram
+	if report.Successful > 0 {
+		printHistogram(report.Results)
+	}
+
+	// Show errors if any
+	errCount := 0
+	for _, r := range report.Results {
+		if r.Error != nil {
+			errCount++
+			if errCount <= 5 {
+				fmt.Printf("  ERROR %s: %v\n", r.NumeroPoliza, r.Error)
+			}
+		}
+	}
+	if errCount > 5 {
+		fmt.Printf("  ... and %d more errors\n", errCount-5)
+	}
+}
+
+func printHistogram(results []portfolio.BatchResult) {
+	buckets := [10]int{}
+	max := decimal.Zero
+	for _, r := range results {
+		if r.Error != nil {
+			continue
+		}
+		if r.ReserveValue.GreaterThan(max) {
+			max = r.ReserveValue
+		}
+	}
+	if max.LessThanOrEqual(decimal.Zero) {
+		return
+	}
+
+	for _, r := range results {
+		if r.Error != nil {
+			continue
+		}
+		pct := r.ReserveValue.Mul(decimal.NewFromInt(100)).Div(max).IntPart()
+		bucket := int(pct) / 10
+		if bucket > 9 {
+			bucket = 9
+		}
+		buckets[bucket]++
+	}
+
+	fmt.Println("\nReserve distribution:")
+	maxCount := 0
+	for _, c := range buckets {
+		if c > maxCount {
+			maxCount = c
+		}
+	}
+	for i, count := range buckets {
+		lo := i * 10
+		hi := (i + 1) * 10
+		bar := ""
+		if maxCount > 0 {
+			barLen := count * 40 / maxCount
+			bar = repeat("#", barLen)
+		}
+		fmt.Printf("  %3d%%-%3d%%: %4d %s\n", lo, hi, count, bar)
+	}
 }
