@@ -1,14 +1,15 @@
 // Package generator produces RIS (Registro de Informacion de Seguros) files
 // in the fixed-width text format defined by the CMF Anexo Tecnico Circular 1194.
 //
-// The RIS file contains 4 record types:
-//
-//	Registro 1: Header del archivo (1 por archivo)
-//	Registro 2: Poliza / siniestro (1 por causante)
-//	Registro 3: Asegurados y beneficiarios (N por cada registro 2)
-//	Registro 4: Totales del archivo (1 por archivo)
-//
-// File naming: Raaaamm.txt where aaaa=year, mm=month of reporting period.
+// Format rules (Anexo Tecnico seccion II.2):
+//   - Fixed-width records, no delimiters
+//   - Numeric fields: right-justified, zero-padded on the left, format 9(n)V9(m)
+//     means n integer digits + m decimal digits (implied decimal, no point)
+//   - Alphanumeric fields (X(n)): left-justified, space-padded on the right
+//   - Dates: AAAAMMDD
+//   - Amounts in UF with 2 decimals
+//   - No tildes, no Ñ (use #), no special chars like º ª
+//   - Each record ends with newline
 package generator
 
 import (
@@ -22,174 +23,297 @@ import (
 	"reservas/internal/models"
 )
 
-// RISRecord holds the data needed to generate a complete RIS file.
 type RISRecord struct {
-	ReportingPeriod time.Time // last day of the reporting trimester
-	RUTCompania     string    // RUT of the insurance company
-
-	Policies []RISPolicyRecord
+	ReportingPeriod time.Time
+	RUTCompania     string
+	VerRUTCompania  string
+	NomCompania     string
+	Policies        []RISPolicyRecord
 }
 
-// RISPolicyRecord holds data for one policy and its family group.
 type RISPolicyRecord struct {
-	// Registro 2 fields
-	NumeroInterno   string // unique policy ID within the file
-	RUTAfiliado     string
-	VerRUTAfiliado  string
-	TipoPension     string // 01-15 (C1194 campo 2.6)
-	CompaniaObliga  string // O / N (campo 2.7)
-	VigenciaPension string // 6/7/8/9 (campo 2.8)
-	CodigoAFP       string // AFP code
-	TipoAfiliado    string // D / I / R (campo 2.10)
-
-	FechaVigenciaInicial time.Time // campo 2.14
+	NumeroInterno        string
+	NumeroPersonas       int
+	RUTAfiliado          string
+	VerRUTAfiliado       string
+	TipoPension          string
+	CompaniaObliga       string
+	VigenciaPension      string
+	CodigoAFP            string
+	TipoAfiliado         string
+	CuentaIndividual     decimal.Decimal
+	IngresoBaseUF        decimal.Decimal
+	PorcentajeCubierto   int
+	FechaVigenciaInicial time.Time
 	PrimaUnicaUF         decimal.Decimal
-	RentaMensualUF       decimal.Decimal // campo 2.16
-	TipoRenta            string          // 1000/2xxx/3000 (campo 2.17)
-	ModalidadRenta       string          // 1000/2xxx/3xxx/4xxx (campo 2.18)
-	TipoOperacionRV      string          // SM / CM (campo 2.19)
-	PeriodoAumento       int             // campo 2.20
-	PorcentajeAumento    decimal.Decimal // campo 2.21
-	TasaCtoEmision       decimal.Decimal // campo 2.22 (TCj)
-	TasaVenta            decimal.Decimal // campo 2.23 (TVj)
-	NumeroReaseguro      int             // campo 2.24
-
-	// Members for Registro 3
-	Members []RISMemberRecord
+	RentaMensualUF       decimal.Decimal
+	TipoRenta            string
+	ModalidadRenta       string
+	TipoOperacionRV      string
+	PeriodoAumento       int
+	PorcentajeAumento    decimal.Decimal
+	TasaCtoEmision       decimal.Decimal
+	TasaVenta            decimal.Decimal
+	NumeroReaseguro      int
+	Members              []RISMemberRecord
 }
 
-// RISMemberRecord holds data for one person in Registro 3.
 type RISMemberRecord struct {
-	NumeroOrden        int // position within the policy
-	RUT                string
-	VerRUT             string
-	PrimerApellido     string
-	SegundoApellido    string
-	Nombres            string
-	Genero             string // M / F (campo 3.9)
-	TipoBeneficiario   string // 99/10/11/20/21/30/35/41/42/50/51/52/77 (campo 3.10)
-	SituacionInvalidez string // N / T / P (campo 3.11)
-	FechaNacimiento    time.Time
-	FechaFallecimiento *time.Time
-	FechaInvalidez     *time.Time
-	DerechoPension     string          // 99 / 10 / 20 (campo 3.15)
-	RequisitoPension   string          // 1-9 (campo 3.16)
-	DerechoAcrecer     string          // S / N (campo 3.19)
-	PorcentajePension  decimal.Decimal // campo 3.20
-	PensionPersonaUF   decimal.Decimal // campo 3.21
-
-	// Reserves (campos 3.25-3.26)
+	NumeroOrden             int
+	RUT                     string
+	VerRUT                  string
+	PrimerApellido          string
+	SegundoApellido         string
+	Nombres                 string
+	Genero                  string
+	TipoBeneficiario        string
+	SituacionInvalidez      string
+	FechaNacimiento         time.Time
+	FechaFallecimiento      *time.Time
+	FechaInvalidez          *time.Time
+	DerechoPension          string
+	RequisitoPension        string
+	RelacionHijoMadre       int
+	FechaNacHijoMenor       *time.Time
+	DerechoAcrecer          string
+	PorcentajePension       decimal.Decimal
+	PensionPersonaUF        decimal.Decimal
 	RTBaseTotal             decimal.Decimal
 	RTBaseTablaVigenteTotal decimal.Decimal
 }
 
-// Generate writes a complete RIS file to the given writer.
+// Generate writes a complete RIS file to the given writer in fixed-width format.
 func Generate(w io.Writer, rec *RISRecord) error {
 	var b strings.Builder
 
-	// Registro 1: Header
+	totalRegistros := 2 // reg1 + reg4
+	for _, p := range rec.Policies {
+		totalRegistros += 1 + len(p.Members) // reg2 + reg3s
+	}
+
 	b.WriteString(formatRegistro1(rec))
 
-	// Registro 2 + Registro 3 (per policy)
-	totalPersonas := 0
+	var totalRTBase, totalRTBaseVigente decimal.Decimal
 	for _, p := range rec.Policies {
-		totalPersonas += len(p.Members)
-		b.WriteString(formatRegistro2(&p, rec))
+		b.WriteString(formatRegistro2(&p))
 		for _, m := range p.Members {
-			b.WriteString(formatRegistro3(&m, &p, rec))
+			b.WriteString(formatRegistro3(&m))
+			totalRTBase = totalRTBase.Add(m.RTBaseTotal)
+			totalRTBaseVigente = totalRTBaseVigente.Add(m.RTBaseTablaVigenteTotal)
 		}
 	}
 
-	// Registro 4: Totales
-	b.WriteString(formatRegistro4(rec, totalPersonas))
+	b.WriteString(formatRegistro4(len(rec.Policies), totalRegistros, totalRTBase, totalRTBaseVigente))
 
 	_, err := io.WriteString(w, b.String())
 	return err
 }
 
-// formatRegistro1 produces the header record.
-// Format: TIPO|PERIODO|RUT_COMPAÑIA
+// === Fixed-width field formatters ===
+
+// num formats a decimal as 9(intDigits)V9(decDigits): zero-padded integer
+// representation with implied decimal point.
+func num(val decimal.Decimal, intDigits, decDigits int) string {
+	multiplier := decimal.New(1, int32(decDigits))
+	scaled := val.Mul(multiplier).Round(0)
+	if scaled.IsNegative() {
+		scaled = scaled.Neg()
+	}
+	totalDigits := intDigits + decDigits
+	s := scaled.String()
+	if len(s) < totalDigits {
+		s = strings.Repeat("0", totalDigits-len(s)) + s
+	}
+	if len(s) > totalDigits {
+		s = s[len(s)-totalDigits:]
+	}
+	return s
+}
+
+func numInt(val, width int) string {
+	s := fmt.Sprintf("%d", val)
+	if len(s) < width {
+		s = strings.Repeat("0", width-len(s)) + s
+	}
+	if len(s) > width {
+		s = s[len(s)-width:]
+	}
+	return s
+}
+
+func alpha(val string, width int) string {
+	clean := sanitize(val)
+	if len(clean) >= width {
+		return clean[:width]
+	}
+	return clean + strings.Repeat(" ", width-len(clean))
+}
+
+func dateFmt(t time.Time) string {
+	if t.IsZero() {
+		return "00000000"
+	}
+	return t.Format("20060102")
+}
+
+func sanitize(s string) string {
+	s = strings.ToUpper(s)
+	repl := strings.NewReplacer(
+		"Á", "A", "É", "E", "Í", "I", "Ó", "O", "Ú", "U",
+		"Ñ", "#", "º", "", "ª", "",
+	)
+	return repl.Replace(s)
+}
+
+// === Registro 1: Header ===
+// Layout: tipo(1) + fecha(8) + rut(9) + ver(1) + nom(60) + filler(235) = 314
 func formatRegistro1(rec *RISRecord) string {
-	return fmt.Sprintf("1|%s|%s\n",
-		rec.ReportingPeriod.Format("20060102"),
-		padRUT(rec.RUTCompania),
-	)
+	return "1" +
+		dateFmt(rec.ReportingPeriod) +
+		numInt(parseRUTBody(rec.RUTCompania), 9) +
+		alpha(dflt(rec.VerRUTCompania, "0"), 1) +
+		alpha(rec.NomCompania, 60) +
+		strings.Repeat(" ", 235) + "\n"
 }
 
-// formatRegistro2 produces a policy record.
-func formatRegistro2(p *RISPolicyRecord, rec *RISRecord) string {
-	numPersonas := len(p.Members)
+// === Registro 2: Poliza ===
+func formatRegistro2(p *RISPolicyRecord) string {
+	var b strings.Builder
+	b.WriteString("2")                                        // TIPO-REGISTRO
+	b.WriteString(alpha(p.NumeroInterno, 10))                 // 2.2 NUMERO-INTERNO
+	b.WriteString(numInt(p.NumeroPersonas, 2))                // 2.3 NUMERO-PERSONAS
+	b.WriteString(numInt(parseRUTBody(p.RUTAfiliado), 9))     // 2.4 RUT-AFILIADO
+	b.WriteString(alpha(dflt(p.VerRUTAfiliado, "0"), 1))      // 2.5 VER-RUT
+	b.WriteString(numInt(parseIntSafe(p.TipoPension), 2))     // 2.6 TIPO-PENSION
+	b.WriteString(alpha(dflt(p.CompaniaObliga, "N"), 1))      // 2.7 COMPAÑIA-OBLIGADA
+	b.WriteString(numInt(parseIntSafe(p.VigenciaPension), 1)) // 2.8 VIGENCIA
+	b.WriteString(numInt(parseIntSafe(p.CodigoAFP), 2))       // 2.9 CODIGO-AFP
+	b.WriteString(alpha(dflt(p.TipoAfiliado, "R"), 1))        // 2.10 TIPO-AFILIADO
+	b.WriteString(num(p.CuentaIndividual, 5, 2))              // 2.11 CUENTA-INDIVIDUAL
+	b.WriteString(num(p.IngresoBaseUF, 3, 2))                 // 2.12 INGRESO-BASE
+	b.WriteString(numInt(p.PorcentajeCubierto, 3))            // 2.13 PORCENTAJE-CUBIERTO
+	b.WriteString(dateFmt(p.FechaVigenciaInicial))            // 2.14 FECHA-VIGENCIA
+	b.WriteString(num(p.PrimaUnicaUF, 5, 2))                  // 2.15 PRIMA-UNICA
+	b.WriteString(num(p.RentaMensualUF, 3, 2))                // 2.16 RENTA-MENSUAL
+	b.WriteString(numInt(parseIntSafe(p.TipoRenta), 4))       // 2.17 TIPO-RENTA
+	b.WriteString(numInt(parseIntSafe(p.ModalidadRenta), 4))  // 2.18 MODALIDAD-RENTA
+	b.WriteString(alpha(dflt(p.TipoOperacionRV, "  "), 2))    // 2.19 TIPO-OPERACION
+	b.WriteString(numInt(p.PeriodoAumento, 3))                // 2.20 PERIODO-AUMENTO
+	b.WriteString(num(p.PorcentajeAumento, 3, 2))             // 2.21 PORCENTAJE-AUMENTO
+	b.WriteString(num(p.TasaCtoEmision, 2, 2))                // 2.22 TASA-CTO-EMISION
+	b.WriteString(num(p.TasaVenta, 2, 2))                     // 2.23 TASA-VENTA
+	b.WriteString(numInt(p.NumeroReaseguro, 1))               // 2.24 NUMERO-REASEGURO
 
-	return fmt.Sprintf("2|%s|%d|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%d|%s|%d|%s|%s|%s|%d\n",
-		p.NumeroInterno,                 // 2.2 NUMERO-INTERNO
-		numPersonas,                     // 2.3 NUMERO-PERSONAS
-		p.RUTAfiliado,                   // 2.4 RUT-AFILIADO
-		p.VerRUTAfiliado,                // 2.5 VER-RUT-AFILIADO
-		p.TipoPension,                   // 2.6 TIPO-PENSION
-		p.CompaniaObliga,                // 2.7 COMPAÑIA-OBLIGADA
-		p.VigenciaPension,               // 2.8 VIGENCIA-PENSION
-		defaultStr(p.CodigoAFP, "00"),   // 2.9 CODIGO-AFP
-		defaultStr(p.TipoAfiliado, "R"), // 2.10 TIPO-AFILIADO
-		zeroIfEmpty(""),                 // 2.11 CUENTA-INDIVIDUAL (RV only)
-		zeroIfEmpty(""),                 // 2.12 INGRESO-BASE-EN-UF
-		zeroIfEmpty(""),                 // 2.13 PORCENTAJE-CUBIERTO
-		p.FechaVigenciaInicial.Format("20060102"), // 2.14
-		p.PrimaUnicaUF.StringFixed(2),             // 2.15
-		p.RentaMensualUF.StringFixed(2),           // 2.16
-		numPersonas,                               // 2.3 (repeated for RV section)
-		p.TipoRenta,                               // 2.17 TIPO-RENTA
-		p.PeriodoAumento,                          // 2.20 PERIODO-AUMENTO
-		p.PorcentajeAumento.StringFixed(2),        // 2.21
-		p.TasaCtoEmision.StringFixed(2),           // 2.22
-		p.TasaVenta.StringFixed(2),                // 2.23
-		p.NumeroReaseguro,                         // 2.24
-	)
+	// 3 reaseguro blocks (all zeros if no reaseguro)
+	for i := 0; i < 3; i++ {
+		b.WriteString("00")                    // COMPAÑIA-REASEGURO 9(02)
+		b.WriteString(" ")                     // OPERACION-REASEGURO X(01)
+		b.WriteString(" ")                     // MODO-REASEGURO X(01)
+		b.WriteString(num(decimal.Zero, 3, 2)) // PORCENTAJE-RETENIDO
+		b.WriteString("00000000")              // FECHA-INICIO
+		b.WriteString("99991231")              // FECHA-TERMINO
+		b.WriteString(num(decimal.Zero, 2, 2)) // TASA-CTO-EQUIV-RET
+		b.WriteString("00000000")              // FECHA-SUSCRIPCION
+		b.WriteString("00000000")              // FECHA-VIGENCIA-REASEGURO
+	}
+
+	b.WriteString("0")                     // 2.34 POLIZA-CON-ANTICIPO
+	b.WriteString("00000000")              // 2.35 FECHA-RECALCULO-ACTUAL
+	b.WriteString("00000000")              // 2.36 FECHA-RECALCULO-ANTERIOR
+	b.WriteString(num(decimal.Zero, 3, 2)) // 2.37 RENTA-RECALCULO-ACTUAL
+	b.WriteString(num(decimal.Zero, 3, 2)) // 2.38 RENTA-RECALCULO-ANTERIOR
+	b.WriteString(strings.Repeat(" ", 60)) // FILLER
+	b.WriteString("\n")
+	return b.String()
 }
 
-// formatRegistro3 produces a person/beneficiary record.
-func formatRegistro3(m *RISMemberRecord, p *RISPolicyRecord, rec *RISRecord) string {
-	fechaNac := m.FechaNacimiento.Format("20060102")
-	fechaFall := "0"
+// === Registro 3: Afiliado/Beneficiario ===
+func formatRegistro3(m *RISMemberRecord) string {
+	var b strings.Builder
+	b.WriteString("3")                                         // TIPO-REGISTRO
+	b.WriteString(alpha("", 10))                               // 3.2 NUMERO-INTERNO
+	b.WriteString(numInt(m.NumeroOrden, 2))                    // 3.3 NUMERO-DE-ORDEN
+	b.WriteString(numInt(parseRUTBody(m.RUT), 9))              // 3.4 RUT
+	b.WriteString(alpha(dflt(m.VerRUT, "0"), 1))               // 3.5 VER-RUT
+	b.WriteString(alpha(m.PrimerApellido, 25))                 // 3.6 PRIMER-APELLIDO
+	b.WriteString(alpha(m.SegundoApellido, 25))                // 3.7 SEGUNDO-APELLIDO
+	b.WriteString(alpha(m.Nombres, 30))                        // 3.8 NOMBRES
+	b.WriteString(alpha(m.Genero, 1))                          // 3.9 GENERO
+	b.WriteString(numInt(parseIntSafe(m.TipoBeneficiario), 2)) // 3.10 TIPO-BENEFICIARIO
+	b.WriteString(alpha(dflt(m.SituacionInvalidez, "N"), 1))   // 3.11 SITUACION-INVALIDEZ
+	b.WriteString(dateFmt(m.FechaNacimiento))                  // 3.12 FECHA-NACIMIENTO
+
 	if m.FechaFallecimiento != nil {
-		fechaFall = m.FechaFallecimiento.Format("20060102")
+		b.WriteString(dateFmt(*m.FechaFallecimiento)) // 3.13
+	} else {
+		b.WriteString("00000000")
 	}
-	fechaInv := "0"
 	if m.FechaInvalidez != nil {
-		fechaInv = m.FechaInvalidez.Format("20060102")
+		b.WriteString(dateFmt(*m.FechaInvalidez)) // 3.14
+	} else {
+		b.WriteString("00000000")
 	}
 
-	return fmt.Sprintf("3|%d|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s\n",
-		m.NumeroOrden,                            // 3.3 NUMERO-DE-ORDEN
-		m.RUT,                                    // 3.4 RUT
-		m.VerRUT,                                 // 3.5 VER-RUT
-		padRight(m.PrimerApellido, 30),           // 3.6
-		padRight(m.SegundoApellido, 30),          // 3.7
-		padRight(m.Nombres, 30),                  // 3.8
-		m.Genero,                                 // 3.9 GENERO
-		m.TipoBeneficiario,                       // 3.10 TIPO-BENEFICIARIO
-		m.SituacionInvalidez,                     // 3.11 SITUACION-INVALIDEZ
-		fechaNac,                                 // 3.12 FECHA-NACIMIENTO
-		fechaFall,                                // 3.13 FECHA-FALLECIMIENTO
-		fechaInv,                                 // 3.14 FECHA-INVALIDEZ
-		m.DerechoPension,                         // 3.15 DERECHO-PENSION
-		m.RequisitoPension,                       // 3.16 REQUISITO-PENSION
-		"0",                                      // 3.17 RELACION-HIJO-MADRE
-		"0",                                      // 3.18 FECHA-NAC-HIJO-MENOR
-		m.DerechoAcrecer,                         // 3.19 DERECHO-ACRECER
-		m.PorcentajePension.StringFixed(2),       // 3.20
-		m.PensionPersonaUF.StringFixed(2),        // 3.21
-		m.RTBaseTotal.StringFixed(2),             // 3.25 RT-BASE-TOTAL
-		m.RTBaseTablaVigenteTotal.StringFixed(2), // 3.26
-	)
+	b.WriteString(numInt(parseIntSafe(m.DerechoPension), 2))   // 3.15 DERECHO-PENSION
+	b.WriteString(numInt(parseIntSafe(m.RequisitoPension), 1)) // 3.16 REQUISITO-PENSION
+	b.WriteString(numInt(m.RelacionHijoMadre, 2))              // 3.17 RELACION-HIJO-MADRE
+
+	if m.FechaNacHijoMenor != nil { // 3.18 FECHA-NAC-HIJO-MENOR
+		b.WriteString(dateFmt(*m.FechaNacHijoMenor))
+	} else {
+		b.WriteString("00000000")
+	}
+
+	b.WriteString(alpha(dflt(m.DerechoAcrecer, "N"), 1)) // 3.19 DERECHO-ACRECER
+	b.WriteString(num(m.PorcentajePension, 3, 2))        // 3.20 PORCENTAJE-PENSION
+	b.WriteString(num(m.PensionPersonaUF, 3, 2))         // 3.21 PENSION-PERSONA
+	b.WriteString(num(decimal.Zero, 2, 2))               // 3.22 PORCENTAJE-ANTICIPO
+	b.WriteString(num(decimal.Zero, 2, 2))               // 3.23 PORCENTAJE-PENSION-POST-ANTICIPO
+	b.WriteString("00000000")                            // 3.24 FECHA-ANTICIPO
+	b.WriteString(num(m.RTBaseTotal, 5, 2))              // 3.25 RT-BASE-TOTAL
+	b.WriteString(num(m.RTBaseTablaVigenteTotal, 5, 2))  // 3.26 RT-BASE-TABLA-VIGENTE
+
+	// Campos 3.27-3.38: 12 RT financieras (total + retenida), all 9(05)V9(02)
+	for i := 0; i < 12; i++ {
+		b.WriteString(num(decimal.Zero, 5, 2))
+	}
+
+	// Campos 3.39-3.41: beneficios estatales + bono por hijo
+	for i := 0; i < 3; i++ {
+		b.WriteString(num(decimal.Zero, 2, 6)) // MONTO-PAGO-BENEFICIO-ESTATAL
+	}
+	for i := 0; i < 3; i++ {
+		b.WriteString("0") // TIPO-PAGO-BENEFICIO-ESTATAL
+	}
+	for i := 0; i < 3; i++ {
+		b.WriteString(num(decimal.Zero, 2, 4)) // BONO-POR-HIJO
+	}
+
+	b.WriteString("\n")
+	return b.String()
 }
 
-// formatRegistro4 produces the totals record.
-func formatRegistro4(rec *RISRecord, totalPersonas int) string {
-	totalPolizas := len(rec.Policies)
-	return fmt.Sprintf("4|%d|%d\n", totalPolizas, totalPersonas)
+// === Registro 4: Totales ===
+func formatRegistro4(numPolizas, numRegistros int, totalRTBase, totalRTBaseVigente decimal.Decimal) string {
+	var b strings.Builder
+	b.WriteString("4")                            // TIPO-REGISTRO
+	b.WriteString(numInt(numPolizas, 6))          // 4.2 NUMERO-POLIZAS
+	b.WriteString(numInt(numRegistros, 6))        // 4.3 NUMERO-REGISTROS
+	b.WriteString(num(totalRTBase, 15, 2))        // 4.4 TOTAL-RT-BASE-TOTAL
+	b.WriteString(num(totalRTBaseVigente, 15, 2)) // 4.5 TOTAL-RT-BASE-TABLA-VIGENTE
+
+	// Campos 4.6-4.17: 11 RT financieras/retenidas, all 9(15)V9(02)
+	for i := 0; i < 11; i++ {
+		b.WriteString(num(decimal.Zero, 15, 2))
+	}
+
+	b.WriteString(strings.Repeat(" ", 63)) // FILLER
+	b.WriteString("\n")
+	return b.String()
 }
 
-// FromSimulation converts a policy + beneficiario slice into RIS records.
+// === Conversion from models ===
+
 func FromSimulation(
 	policy *models.Policy,
 	members []models.Beneficiario,
@@ -198,15 +322,17 @@ func FromSimulation(
 ) *RISPolicyRecord {
 	rec := &RISPolicyRecord{
 		NumeroInterno:        policy.NumeroPoliza,
-		TipoPension:          defaultStr(policy.TipoPension, models.TipoPensionRVVejezJubilacion),
+		NumeroPersonas:       len(members),
+		TipoPension:          dflt(policy.TipoPension, models.TipoPensionRVVejezJubilacion),
 		CompaniaObliga:       "N",
-		VigenciaPension:      defaultStr(policy.VigenciaPension, models.VigenciaEnPago),
+		VigenciaPension:      dflt(policy.VigenciaPension, models.VigenciaEnPago),
+		CodigoAFP:            "00",
 		TipoAfiliado:         "R",
 		FechaVigenciaInicial: policy.FechaInicio,
 		PrimaUnicaUF:         policy.CapitalAsegurado,
 		RentaMensualUF:       rentaMensualUF.Div(decimal.NewFromInt(12)),
-		TipoRenta:            defaultStr(policy.TipoRenta, "1000"),
-		ModalidadRenta:       defaultStr(policy.ModalidadRenta, "1000"),
+		TipoRenta:            policy.TipoRenta,
+		ModalidadRenta:       dflt(policy.ModalidadRenta, "1000"),
 		TipoOperacionRV:      "SM",
 		PeriodoAumento:       policy.PeriodoAumento,
 		PorcentajeAumento:    policy.PorcentajeAumento,
@@ -217,18 +343,15 @@ func FromSimulation(
 	for i := range members {
 		m := &members[i]
 		rtBase := reserves[string(m.Rol)]
-		if rtBase.IsZero() {
-			rtBase = reserves[string(m.TipoBeneficiarioC1194)]
-		}
 
 		member := RISMemberRecord{
 			NumeroOrden:        i + 1,
 			Genero:             m.Sexo,
-			TipoBeneficiario:   defaultStr(m.TipoBeneficiarioC1194, "99"),
-			SituacionInvalidez: defaultStr(m.SituacionInvalidez, "N"),
-			DerechoPension:     defaultStr(m.DerechoPension, "99"),
-			RequisitoPension:   defaultStr(m.RequisitoPension, "1"),
-			DerechoAcrecer:     defaultStr(m.DerechoAcrecer, "N"),
+			TipoBeneficiario:   dflt(m.TipoBeneficiarioC1194, "99"),
+			SituacionInvalidez: dflt(m.SituacionInvalidez, "N"),
+			DerechoPension:     dflt(m.DerechoPension, "99"),
+			RequisitoPension:   dflt(m.RequisitoPension, "1"),
+			DerechoAcrecer:     dflt(m.DerechoAcrecer, "N"),
 			PorcentajePension:  m.PorcentajeRenta.Mul(decimal.NewFromInt(100)),
 			RTBaseTotal:        rtBase,
 		}
@@ -241,7 +364,6 @@ func FromSimulation(
 
 		if m.Estado == "FALLECIDO" {
 			member.FechaFallecimiento = &policy.FechaInicio
-			member.DerechoPension = models.DerechoPensionNo
 		}
 
 		rec.Members = append(rec.Members, member)
@@ -250,34 +372,30 @@ func FromSimulation(
 	return rec
 }
 
-// Helper functions
-
-func padRUT(rut string) string {
-	return padRight(rut, 12)
+func FileName(period time.Time) string {
+	return fmt.Sprintf("R%s.txt", period.Format("200601"))
 }
 
-func padRight(s string, n int) string {
-	if len(s) >= n {
-		return s[:n]
-	}
-	return s + strings.Repeat(" ", n-len(s))
-}
+// === helpers ===
 
-func defaultStr(val, def string) string {
+func dflt(val, def string) string {
 	if val == "" {
 		return def
 	}
 	return val
 }
 
-func zeroIfEmpty(s string) string {
+func parseIntSafe(s string) int {
 	if s == "" {
-		return "0"
+		return 0
 	}
-	return s
+	var n int
+	fmt.Sscanf(s, "%d", &n)
+	return n
 }
 
-// FileName generates the RIS file name: Raaaamm.txt
-func FileName(period time.Time) string {
-	return fmt.Sprintf("R%s.txt", period.Format("200601"))
+func parseRUTBody(rut string) int {
+	var n int
+	fmt.Sscanf(rut, "%d", &n)
+	return n
 }
