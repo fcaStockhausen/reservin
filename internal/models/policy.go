@@ -10,18 +10,26 @@ import (
 type Policy struct {
 	ID               int              `json:"id" db:"id"`
 	NumeroPoliza     string           `json:"numero_poliza" db:"numero_poliza"`
-	TipoRenta        string           `json:"tipo_renta" db:"tipo_renta"` // VITALICIA, TEMPORARIA, DIFERIDA
+	TipoRenta        string           `json:"tipo_renta" db:"tipo_renta"`
 	FechaInicio      time.Time        `json:"fecha_inicio" db:"fecha_inicio"`
 	FechaFin         *time.Time       `json:"fecha_fin,omitempty" db:"fecha_fin"`
 	EdadContratante  int              `json:"edad_contratante" db:"edad_contratante"`
-	SexoBeneficiario string           `json:"sexo_beneficiario" db:"sexo_beneficiario"` // H, M
+	SexoBeneficiario string           `json:"sexo_beneficiario" db:"sexo_beneficiario"` // C1194: M, F
 	CapitalAsegurado decimal.Decimal   `json:"capital_asegurado" db:"capital_asegurado"`
-	FormaPago       string           `json:"forma_pago" db:"forma_pago"` // MENSUAL, TRIMESTRAL, ANUAL
-	TasaDescuento    decimal.Decimal   `json:"tasa_descuento" db:"tasa_descuento"` // "bautizo" rate
-	TasaTM           decimal.Decimal   `json:"tasa_tm" db:"tasa_tm"`          // Tasa venta
-	TasaTC           decimal.Decimal   `json:"tasa_tc" db:"tasa_tc"`          // Tasa costo
-	Estado           string           `json:"estado" db:"estado"`            // ACTIVA, VENCIDA, CANCELADA
-	TipoTabla        string           `json:"tipo_tabla" db:"tipo_tabla"`    // VEJEZ, INVALIDEZ, SOBREVIVENCIA
+	FormaPago        string           `json:"forma_pago" db:"forma_pago"`
+	TasaDescuento    decimal.Decimal   `json:"tasa_descuento" db:"tasa_descuento"`
+	TasaTM           decimal.Decimal   `json:"tasa_tm" db:"tasa_tm"`
+	TasaTC           decimal.Decimal   `json:"tasa_tc" db:"tasa_tc"`
+	Estado           string           `json:"estado" db:"estado"`
+	TipoTabla        string           `json:"tipo_tabla" db:"tipo_tabla"`
+
+	// RIS C1194 fields (Registro 2)
+	TipoPension      string           `json:"tipo_pension,omitempty" db:"tipo_pension"`       // 01-15 (C1194 campo 2.6)
+	ModalidadRenta   string           `json:"modalidad_renta,omitempty" db:"modalidad_renta"` // 1000/2xxx/3xxx/4xxx (C1194 campo 2.18)
+	VigenciaPension  string           `json:"vigencia_pension,omitempty" db:"vigencia_pension"` // 6/7/8/9 (C1194 campo 2.8)
+	PeriodoAumento   int              `json:"periodo_aumento,omitempty" db:"periodo_aumento"`   // meses aumento temporal (C1194 campo 2.20)
+	PorcentajeAumento decimal.Decimal `json:"porcentaje_aumento,omitempty" db:"porcentaje_aumento"` // % aumento (C1194 campo 2.21)
+
 	CreatedAt        time.Time        `json:"created_at" db:"created_at"`
 }
 
@@ -119,8 +127,8 @@ func ValidatePolicy(policy Policy) error {
 		return ErrInvalidPolicyType
 	}
 
-	// Validate sex
-	if policy.SexoBeneficiario != "H" && policy.SexoBeneficiario != "M" {
+	// Validate sex (C1194 uses M=Masculino, F=Femenino)
+	if policy.SexoBeneficiario != "M" && policy.SexoBeneficiario != "F" {
 		return ErrInvalidSex
 	}
 

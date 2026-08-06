@@ -128,6 +128,45 @@ func NewMigrator(db *sql.DB) *Migrator {
 					);`,
 				},
 			},
+			Migration{
+				Version:     3,
+				Description: "Add RIS C1194 fields to poliza, beneficiario, reserva_calculada; create clausula table",
+				SQL: []string{
+					`-- Extend poliza with RIS C1194 fields (Registro 2)
+					ALTER TABLE poliza ADD COLUMN tipo_pension VARCHAR(2);
+					ALTER TABLE poliza ADD COLUMN modalidad_renta VARCHAR(4) DEFAULT '1000';
+					ALTER TABLE poliza ADD COLUMN vigencia_pension VARCHAR(1) DEFAULT '6';
+					ALTER TABLE poliza ADD COLUMN periodo_aumento INTEGER DEFAULT 0;
+					ALTER TABLE poliza ADD COLUMN porcentaje_aumento DECIMAL(5,2) DEFAULT 0;`,
+
+					`-- Extend beneficiario with RIS C1194 fields (Registro 3)
+					ALTER TABLE beneficiario ADD COLUMN tipo_beneficiario_c1194 VARCHAR(2);
+					ALTER TABLE beneficiario ADD COLUMN derecho_pension VARCHAR(2) DEFAULT '99';
+					ALTER TABLE beneficiario ADD COLUMN requisito_pension VARCHAR(1) DEFAULT '1';
+					ALTER TABLE beneficiario ADD COLUMN derecho_acrecer CHAR(1) DEFAULT 'N';
+					ALTER TABLE beneficiario ADD COLUMN situacion_invalidez CHAR(1) DEFAULT 'N';
+					ALTER TABLE beneficiario ADD COLUMN condicion VARCHAR(20);
+					ALTER TABLE beneficiario ADD COLUMN matrimonio_anios INTEGER DEFAULT 0;
+					ALTER TABLE beneficiario ADD COLUMN hijos_comunes INTEGER DEFAULT 0;
+					ALTER TABLE beneficiario ADD COLUMN fin_derecho_edad INTEGER;`,
+
+					`-- Extend reserva_calculada with multiple reserve variants (RIS campos 3.25-3.31)
+					ALTER TABLE reserva_calculada ADD COLUMN rt_base DECIMAL(15,2);
+					ALTER TABLE reserva_calculada ADD COLUMN rt_base_tabla_vigente DECIMAL(15,2);
+					ALTER TABLE reserva_calculada ADD COLUMN rt_financiera DECIMAL(15,2);`,
+
+					`-- Clausulas adicionales with MODALIDAD-RENTA mapping
+					CREATE TABLE IF NOT EXISTS clausula (
+						id INTEGER PRIMARY KEY AUTOINCREMENT,
+						poliza_id INTEGER NOT NULL,
+						tipo VARCHAR(30) NOT NULL,
+						parametros TEXT,
+						modalidad_renta_c1194 VARCHAR(4) DEFAULT '1000',
+						created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+						FOREIGN KEY (poliza_id) REFERENCES poliza(id) ON DELETE CASCADE
+					);`,
+				},
+			},
 		},
 	}
 }
@@ -240,6 +279,9 @@ func (m *Migrator) createIndexes(tx *sql.Tx) error {
 		`CREATE INDEX IF NOT EXISTS idx_beneficiario_poliza ON beneficiario(poliza_id);`,
 		`CREATE INDEX IF NOT EXISTS idx_beneficiario_rol ON beneficiario(rol);`,
 		`CREATE INDEX IF NOT EXISTS idx_beneficiario_estado ON beneficiario(estado);`,
+
+		// Clausula indexes
+		`CREATE INDEX IF NOT EXISTS idx_clausula_poliza ON clausula(poliza_id);`,
 	}
 
 	for _, indexSQL := range indexes {

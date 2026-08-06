@@ -47,7 +47,7 @@ func (rc *ReserveCalculator) Calculate(
 
 	discountRate := policy.GetEffectiveDiscountRate()
 
-	result, err := rc.projector.Project(policy, grupo, rentaAnual, discountRate)
+	result, err := rc.projector.Project(policy, grupo, rentaAnual, discountRate, 0)
 	if err != nil {
 		return nil, fmt.Errorf("project flows: %w", err)
 	}

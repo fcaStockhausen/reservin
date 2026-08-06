@@ -14,6 +14,7 @@ import (
 	"reservas/internal/database"
 	"reservas/internal/loader"
 	"reservas/internal/models"
+	"reservas/internal/scenario"
 )
 
 const (
@@ -33,6 +34,8 @@ func main() {
 	familiaFlag := flag.String("familia", "", "Show family group for policy ID")
 	calcFlag := flag.String("calc", "", "Calculate reserve for policy ID")
 	exportFlag := flag.String("calc-export", "", "Calculate and export flows to Excel (policy ID)")
+	scenarioFlag := flag.String("scenario", "", "Run simulation from YAML file or builtin name")
+	scenarioAllFlag := flag.Bool("scenario-all", false, "Run all builtin scenarios and compare")
 
 	flag.Parse()
 
@@ -80,6 +83,10 @@ func main() {
 		handleCalc(db, *calcFlag, "")
 	case *exportFlag != "":
 		handleCalc(db, *exportFlag, "export")
+	case *scenarioFlag != "":
+		handleScenario(db, *scenarioFlag)
+	case *scenarioAllFlag:
+		handleScenarioAll(db)
 	default:
 		fmt.Println("Use -help for available commands")
 		fmt.Println("Available options:")
@@ -91,6 +98,8 @@ func main() {
 		fmt.Println("  -familia <id>      Show family group for policy")
 		fmt.Println("  -calc <id>         Calculate reserve for policy")
 		fmt.Println("  -calc-export <id>  Calculate and export flows to Excel")
+		fmt.Println("  -scenario <name>    Run simulation (YAML file or builtin name)")
+		fmt.Println("  -scenario-all       Run all builtin scenarios and compare")
 		fmt.Println("  -version           Show version")
 		fmt.Println("  -config <path>     Configuration file path")
 	}
@@ -291,12 +300,15 @@ func handleSeedDemo(db *database.DB) {
 		TipoRenta:        "VITALICIA",
 		FechaInicio:      time.Date(2023, 3, 15, 0, 0, 0, 0, time.UTC),
 		EdadContratante:  65,
-		SexoBeneficiario: "M",
+		SexoBeneficiario: models.SexoFemenino,
 		CapitalAsegurado: decimal.NewFromFloat(50000000),
 		FormaPago:        "MENSUAL",
 		TasaTM:           decimal.NewFromFloat(0.038),
 		TasaTC:           decimal.NewFromFloat(0.035),
 		Estado:           "ACTIVA",
+		TipoPension:      models.TipoPensionRVVejezJubilacion,
+		ModalidadRenta:   "1000",
+		VigenciaPension:  models.VigenciaEnPago,
 	}
 	policy.TasaDescuento = decimal.Min(policy.TasaTM, policy.TasaTC)
 
@@ -309,28 +321,42 @@ func handleSeedDemo(db *database.DB) {
 	methodology := policy.GetMethodology()
 	members := []models.Beneficiario{
 		{
-			PolizaID:         polizaID,
-			Rol:              models.RolCausante,
-			Sexo:             "M",
-			EdadContratacion: 65,
-			PorcentajeRenta:  decimal.NewFromFloat(1.0),
-			Estado:           "ACTIVO",
+			PolizaID:              polizaID,
+			Rol:                   models.RolCausante,
+			Sexo:                  models.SexoFemenino,
+			EdadContratacion:      65,
+			PorcentajeRenta:       decimal.NewFromFloat(1.0),
+			Estado:                "ACTIVO",
+			TipoBeneficiarioC1194: models.C1194Afiliado,
+			DerechoPension:        models.DerechoPensionSi,
+			DerechoAcrecer:        "N",
+			SituacionInvalidez:    models.InvNo,
 		},
 		{
-			PolizaID:         polizaID,
-			Rol:              models.RolConyuge,
-			Sexo:             "H",
-			EdadContratacion: 68,
-			PorcentajeRenta:  decimal.NewFromFloat(0.60),
-			Estado:           "ACTIVO",
+			PolizaID:              polizaID,
+			Rol:                   models.RolConyuge,
+			Sexo:                  models.SexoMasculino,
+			EdadContratacion:      68,
+			PorcentajeRenta:       decimal.NewFromFloat(0.50),
+			Estado:                "ACTIVO",
+			TipoBeneficiarioC1194: models.C1194ConyugeConHijos,
+			DerechoPension:        models.DerechoPensionSi,
+			DerechoAcrecer:        "S",
+			SituacionInvalidez:    models.InvNo,
+			MatrimonioAnios:       10,
 		},
 		{
-			PolizaID:         polizaID,
-			Rol:              models.RolHijo,
-			Sexo:             "H",
-			EdadContratacion: 20,
-			PorcentajeRenta:  decimal.NewFromFloat(0.40),
-			Estado:           "ACTIVO",
+			PolizaID:              polizaID,
+			Rol:                   models.RolHijo,
+			Sexo:                  models.SexoMasculino,
+			EdadContratacion:      20,
+			PorcentajeRenta:       decimal.NewFromFloat(0.15),
+			Estado:                "ACTIVO",
+			TipoBeneficiarioC1194: models.C1194HijoSinIncremento,
+			DerechoPension:        models.DerechoPensionSi,
+			SituacionInvalidez:    models.InvNo,
+			Condicion:             "ESTUDIANTE",
+			FinDerechoEdad:        intPtr(24),
 		},
 	}
 
@@ -340,7 +366,7 @@ func handleSeedDemo(db *database.DB) {
 			tipoTabla = string(models.TableTypeVejez)
 		}
 		members[i].TablaAsignada = models.SelectTableForBeneficiario(
-			members[i].Rol, members[i].Sexo, methodology, tipoTabla,
+			members[i].Rol, members[i].Sexo, members[i].TipoBeneficiarioC1194, methodology, tipoTabla,
 		)
 	}
 
@@ -420,9 +446,17 @@ func printMember(b *models.Beneficiario, isCausante bool) {
 	if isCausante {
 		label = " <-- CAUSANTE"
 	}
-	fmt.Printf("  [%s] sexo: %s | edad: %d | nac: %s | tabla: %s | renta: %s%% | estado: %s%s\n",
-		b.Rol, b.Sexo, b.EdadContratacion,
-		birthDate, b.TablaAsignada, pct, b.Estado, label)
+	finDer := ""
+	if b.FinDerechoEdad != nil {
+		finDer = fmt.Sprintf(" | fin_der: %d", *b.FinDerechoEdad)
+	}
+	fmt.Printf("  [%s] C1194:%s | sexo: %s | edad: %d | nac: %s | tabla: %s | renta: %s%% | der: %s | inv: %s%s%s\n",
+		b.Rol, b.TipoBeneficiarioC1194, b.Sexo, b.EdadContratacion,
+		birthDate, b.TablaAsignada, pct, b.DerechoPension, b.SituacionInvalidez, finDer, label)
+}
+
+func intPtr(v int) *int {
+	return &v
 }
 
 func handleCalc(db *database.DB, polizaIDStr string, mode string) {
@@ -506,4 +540,149 @@ func handleCalc(db *database.DB, polizaIDStr string, mode string) {
 		fmt.Println("  Sheet 'Flujos': flujo a flujo desagregado por miembro")
 		fmt.Println("  Sheet 'Resumen': VP total por rol y reserva total")
 	}
+}
+
+func handleScenario(db *database.DB, name string) {
+	mortRepo := database.NewMortalityRepository(db.DB)
+
+	var s *scenario.Scenario
+	var err error
+
+	// Check if it's a YAML file or a builtin name
+	if _, exists := scenario.BuiltinScenarios[name]; exists {
+		s, err = scenario.LoadBuiltin(name)
+	} else {
+		s, err = scenario.Load(name)
+	}
+	if err != nil {
+		log.Fatalf("Failed to load scenario: %v", err)
+	}
+
+	runAndPrintScenario(mortRepo, s)
+}
+
+func handleScenarioAll(db *database.DB) {
+	mortRepo := database.NewMortalityRepository(db.DB)
+
+	var allResults []*scenario.SimulationResult
+
+	for name := range scenario.BuiltinScenarios {
+		s, err := scenario.LoadBuiltin(name)
+		if err != nil {
+			log.Printf("Failed to load scenario %s: %v", name, err)
+			continue
+		}
+		fmt.Printf("\n%s\n%s\n", s.Name, s.Description)
+		result, err := runScenario(mortRepo, s)
+		if err != nil {
+			log.Printf("Failed to run %s: %v", name, err)
+			continue
+		}
+		allResults = append(allResults, result)
+	}
+
+	if len(allResults) == 0 {
+		log.Fatalf("No scenarios ran successfully")
+	}
+
+	// Comparative summary
+	fmt.Println("\n" + repeat("=", 80))
+	fmt.Println("COMPARATIVO DE ESCENARIOS")
+	fmt.Println(repeat("=", 80))
+	fmt.Printf("%-25s %15s %15s %15s %8s\n", "Escenario", "Reserva Max", "Reserva Min", "Reserva Final", "Eventos")
+	fmt.Println(repeat("-", 80))
+	for _, r := range allResults {
+		fmt.Printf("%-25s %15s %15s %15s %8d\n",
+			r.ScenarioName,
+			r.MaxReserve.StringFixed(2),
+			r.MinReserve.StringFixed(2),
+			r.FinalReserve.StringFixed(2),
+			r.EventsTotal,
+		)
+	}
+
+	// Export comparative Excel
+	outputPath := "comparativo_escenarios.xlsx"
+	if err := scenario.ExportComparative(allResults, outputPath); err != nil {
+		log.Printf("Warning: Excel export failed: %v", err)
+	} else {
+		fmt.Printf("\nComparativo exportado a: %s\n", outputPath)
+	}
+}
+
+func runAndPrintScenario(mortRepo *database.MortalityRepository, s *scenario.Scenario) {
+	result, err := runScenario(mortRepo, s)
+	if err != nil {
+		log.Fatalf("Simulation failed: %v", err)
+	}
+
+	fmt.Printf("\n%s\n%s\n", s.Name, s.Description)
+	fmt.Printf("Horizonte: %d años | Eventos: %d\n\n", s.Horizon, result.EventsTotal)
+
+	fmt.Println("Tablas de mortalidad asignadas (por estrato de fecha de contratación):")
+	for _, mt := range result.Tables {
+		fmt.Printf("  %-14s %s  edad %3d  ->  %s\n", mt.Rol, mt.Sexo, mt.Edad, mt.Tabla)
+	}
+	fmt.Println()
+
+	fmt.Printf("%-6s %-6s %15s %15s %15s %15s %8s %s\n", "Año", "Edad", "Reserva", "Reserva Base", "Descalce Bruto", "Descalce Recon.", "Vivos", "Eventos")
+	fmt.Println(repeat("-", 105))
+
+	for _, step := range result.Steps {
+		events := ""
+		if len(step.Events) > 0 {
+			events = joinStrings(step.Events, "; ")
+		}
+		marker := ""
+		if len(step.Events) > 0 {
+			marker = " <<<"
+		}
+		fmt.Printf("%-6d %-6d %15s %15s %15s %15s %8d %s%s\n",
+			step.Year, step.CausanteAge,
+			step.ReserveValue.StringFixed(2),
+			step.ReservaBase.StringFixed(2),
+			step.DescalceBruto.StringFixed(2),
+			step.DescalceReconocido.StringFixed(2),
+			step.MembersAlive,
+			events, marker,
+		)
+	}
+
+	fmt.Println(repeat("-", 70))
+	fmt.Printf("Max: %s | Min: %s | Final: %s\n",
+		result.MaxReserve.StringFixed(2),
+		result.MinReserve.StringFixed(2),
+		result.FinalReserve.StringFixed(2))
+
+	// Export
+	outputPath := fmt.Sprintf("simulacion_%s.xlsx", s.Name)
+	if err := scenario.ExportSimulation(result, outputPath); err != nil {
+		log.Printf("Warning: Excel export failed: %v", err)
+	} else {
+		fmt.Printf("Exportado a: %s\n", outputPath)
+	}
+}
+
+func runScenario(mortRepo *database.MortalityRepository, s *scenario.Scenario) (*scenario.SimulationResult, error) {
+	sim := scenario.NewSimulator(mortRepo)
+	return sim.Run(s)
+}
+
+func repeat(s string, n int) string {
+	result := ""
+	for i := 0; i < n; i++ {
+		result += s
+	}
+	return result
+}
+
+func joinStrings(ss []string, sep string) string {
+	if len(ss) == 0 {
+		return ""
+	}
+	result := ss[0]
+	for i := 1; i < len(ss); i++ {
+		result += sep + ss[i]
+	}
+	return result
 }

@@ -7,27 +7,46 @@ import (
 	"reservas/internal/models"
 )
 
-// BeneficiarioRepository handles beneficiario database operations.
 type BeneficiarioRepository struct {
 	db *sql.DB
 }
 
-// NewBeneficiarioRepository creates a new beneficiario repository.
 func NewBeneficiarioRepository(db *sql.DB) *BeneficiarioRepository {
 	return &BeneficiarioRepository{db: db}
 }
 
-// Insert inserts a single beneficiario and returns the new ID.
+const beneficiarioColumns = `id, poliza_id, rol, sexo, edad_contratacion, fecha_nacimiento,
+	tabla_asignada, porcentaje_renta, estado,
+	tipo_beneficiario_c1194, derecho_pension, requisito_pension,
+	derecho_acrecer, situacion_invalidez, condicion,
+	matrimonio_anios, hijos_comunes, fin_derecho_edad, created_at`
+
+func scanBeneficiario(b *models.Beneficiario) []interface{} {
+	return []interface{}{
+		&b.ID, &b.PolizaID, &b.Rol, &b.Sexo, &b.EdadContratacion, &b.FechaNacimiento,
+		&b.TablaAsignada, &b.PorcentajeRenta, &b.Estado,
+		&b.TipoBeneficiarioC1194, &b.DerechoPension, &b.RequisitoPension,
+		&b.DerechoAcrecer, &b.SituacionInvalidez, &b.Condicion,
+		&b.MatrimonioAnios, &b.HijosComunes, &b.FinDerechoEdad, &b.CreatedAt,
+	}
+}
+
 func (r *BeneficiarioRepository) Insert(b models.Beneficiario) (int, error) {
 	query := `
 	INSERT INTO beneficiario (
 		poliza_id, rol, sexo, edad_contratacion, fecha_nacimiento,
-		tabla_asignada, porcentaje_renta, estado
-	) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+		tabla_asignada, porcentaje_renta, estado,
+		tipo_beneficiario_c1194, derecho_pension, requisito_pension,
+		derecho_acrecer, situacion_invalidez, condicion,
+		matrimonio_anios, hijos_comunes, fin_derecho_edad
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 
 	result, err := r.db.Exec(query,
 		b.PolizaID, b.Rol, b.Sexo, b.EdadContratacion, b.FechaNacimiento,
 		b.TablaAsignada, b.PorcentajeRenta, b.Estado,
+		b.TipoBeneficiarioC1194, b.DerechoPension, b.RequisitoPension,
+		b.DerechoAcrecer, b.SituacionInvalidez, b.Condicion,
+		b.MatrimonioAnios, b.HijosComunes, b.FinDerechoEdad,
 	)
 	if err != nil {
 		return 0, fmt.Errorf("insert beneficiario: %w", err)
@@ -37,7 +56,6 @@ func (r *BeneficiarioRepository) Insert(b models.Beneficiario) (int, error) {
 	return int(id), err
 }
 
-// BatchInsert inserts multiple beneficiarios in a single transaction.
 func (r *BeneficiarioRepository) BatchInsert(members []models.Beneficiario) error {
 	if len(members) == 0 {
 		return nil
@@ -52,8 +70,11 @@ func (r *BeneficiarioRepository) BatchInsert(members []models.Beneficiario) erro
 	stmt, err := tx.Prepare(`
 	INSERT INTO beneficiario (
 		poliza_id, rol, sexo, edad_contratacion, fecha_nacimiento,
-		tabla_asignada, porcentaje_renta, estado
-	) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
+		tabla_asignada, porcentaje_renta, estado,
+		tipo_beneficiario_c1194, derecho_pension, requisito_pension,
+		derecho_acrecer, situacion_invalidez, condicion,
+		matrimonio_anios, hijos_comunes, fin_derecho_edad
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
 	if err != nil {
 		return err
 	}
@@ -63,6 +84,9 @@ func (r *BeneficiarioRepository) BatchInsert(members []models.Beneficiario) erro
 		_, err := stmt.Exec(
 			b.PolizaID, b.Rol, b.Sexo, b.EdadContratacion, b.FechaNacimiento,
 			b.TablaAsignada, b.PorcentajeRenta, b.Estado,
+			b.TipoBeneficiarioC1194, b.DerechoPension, b.RequisitoPension,
+			b.DerechoAcrecer, b.SituacionInvalidez, b.Condicion,
+			b.MatrimonioAnios, b.HijosComunes, b.FinDerechoEdad,
 		)
 		if err != nil {
 			return fmt.Errorf("batch insert beneficiario: %w", err)
@@ -72,37 +96,25 @@ func (r *BeneficiarioRepository) BatchInsert(members []models.Beneficiario) erro
 	return tx.Commit()
 }
 
-// GetByID retrieves a beneficiario by ID.
 func (r *BeneficiarioRepository) GetByID(id int) (*models.Beneficiario, error) {
-	query := `
-	SELECT id, poliza_id, rol, sexo, edad_contratacion, fecha_nacimiento,
-	       tabla_asignada, porcentaje_renta, estado, created_at
-	FROM beneficiario
-	WHERE id = ?`
+	query := `SELECT ` + beneficiarioColumns + ` FROM beneficiario WHERE id = ?`
 
 	b := &models.Beneficiario{}
-	err := r.db.QueryRow(query, id).Scan(
-		&b.ID, &b.PolizaID, &b.Rol, &b.Sexo, &b.EdadContratacion, &b.FechaNacimiento,
-		&b.TablaAsignada, &b.PorcentajeRenta, &b.Estado, &b.CreatedAt,
-	)
+	err := r.db.QueryRow(query, id).Scan(scanBeneficiario(b)...)
 	if err != nil {
 		return nil, err
 	}
 	return b, nil
 }
 
-// GetByPoliza retrieves all family group members for a policy.
 func (r *BeneficiarioRepository) GetByPoliza(polizaID int) ([]models.Beneficiario, error) {
-	query := `
-	SELECT id, poliza_id, rol, sexo, edad_contratacion, fecha_nacimiento,
-	       tabla_asignada, porcentaje_renta, estado, created_at
-	FROM beneficiario
-	WHERE poliza_id = ?
+	query := `SELECT ` + beneficiarioColumns + ` FROM beneficiario WHERE poliza_id = ?
 	ORDER BY CASE rol
 	    WHEN 'CAUSANTE' THEN 0
 	    WHEN 'CONYUGE' THEN 1
-	    WHEN 'HIJO' THEN 2
-	    ELSE 3
+	    WHEN 'CONVIVIENTE_CIVIL' THEN 2
+	    WHEN 'HIJO' THEN 3
+	    ELSE 4
 	END, edad_contratacion DESC`
 
 	rows, err := r.db.Query(query, polizaID)
@@ -114,11 +126,7 @@ func (r *BeneficiarioRepository) GetByPoliza(polizaID int) ([]models.Beneficiari
 	var members []models.Beneficiario
 	for rows.Next() {
 		var b models.Beneficiario
-		err := rows.Scan(
-			&b.ID, &b.PolizaID, &b.Rol, &b.Sexo, &b.EdadContratacion, &b.FechaNacimiento,
-			&b.TablaAsignada, &b.PorcentajeRenta, &b.Estado, &b.CreatedAt,
-		)
-		if err != nil {
+		if err := rows.Scan(scanBeneficiario(&b)...); err != nil {
 			return nil, err
 		}
 		members = append(members, b)
@@ -127,7 +135,6 @@ func (r *BeneficiarioRepository) GetByPoliza(polizaID int) ([]models.Beneficiari
 	return members, rows.Err()
 }
 
-// GetGrupoFamiliar assembles the family group structure for a policy.
 func (r *BeneficiarioRepository) GetGrupoFamiliar(polizaID int) (*models.GrupoFamiliar, error) {
 	members, err := r.GetByPoliza(polizaID)
 	if err != nil {
@@ -147,35 +154,37 @@ func (r *BeneficiarioRepository) GetGrupoFamiliar(polizaID int) (*models.GrupoFa
 	return gf, nil
 }
 
-// Update updates an existing beneficiario.
 func (r *BeneficiarioRepository) Update(b models.Beneficiario) error {
 	query := `
 	UPDATE beneficiario SET
 		poliza_id = ?, rol = ?, sexo = ?, edad_contratacion = ?,
-		fecha_nacimiento = ?, tabla_asignada = ?, porcentaje_renta = ?, estado = ?
+		fecha_nacimiento = ?, tabla_asignada = ?, porcentaje_renta = ?, estado = ?,
+		tipo_beneficiario_c1194 = ?, derecho_pension = ?, requisito_pension = ?,
+		derecho_acrecer = ?, situacion_invalidez = ?, condicion = ?,
+		matrimonio_anios = ?, hijos_comunes = ?, fin_derecho_edad = ?
 	WHERE id = ?`
 
 	_, err := r.db.Exec(query,
 		b.PolizaID, b.Rol, b.Sexo, b.EdadContratacion,
 		b.FechaNacimiento, b.TablaAsignada, b.PorcentajeRenta, b.Estado,
+		b.TipoBeneficiarioC1194, b.DerechoPension, b.RequisitoPension,
+		b.DerechoAcrecer, b.SituacionInvalidez, b.Condicion,
+		b.MatrimonioAnios, b.HijosComunes, b.FinDerechoEdad,
 		b.ID,
 	)
 	return err
 }
 
-// Delete removes a beneficiario permanently.
 func (r *BeneficiarioRepository) Delete(id int) error {
 	_, err := r.db.Exec("DELETE FROM beneficiario WHERE id = ?", id)
 	return err
 }
 
-// DeleteByPoliza removes all family group members for a policy.
 func (r *BeneficiarioRepository) DeleteByPoliza(polizaID int) error {
 	_, err := r.db.Exec("DELETE FROM beneficiario WHERE poliza_id = ?", polizaID)
 	return err
 }
 
-// GetStatistics returns counts about beneficiarios.
 func (r *BeneficiarioRepository) GetStatistics() (map[string]interface{}, error) {
 	stats := make(map[string]interface{})
 

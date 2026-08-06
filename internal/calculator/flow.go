@@ -18,10 +18,10 @@ type MemberFlow struct {
 	MemberSex      string          `json:"member_sex"`
 	MemberTable    string          `json:"member_table"`
 	MemberAgeAtT   int             `json:"member_age_at_t"`
-	RentaBase      decimal.Decimal `json:"renta_base"`     // annual pension this member is entitled to
+	RentaBase      decimal.Decimal `json:"renta_base"`     // annual pension entitled this period
 	PctRenta       decimal.Decimal `json:"pct_renta"`      // share 0..1
 	SurvivalProb   decimal.Decimal `json:"survival_prob"`  // tpx for this member
-	CausanteAlive  decimal.Decimal `json:"causante_alive"` // tpx for causante at same period
+	CausanteAlive  decimal.Decimal `json:"causante_alive"` // tpx causante same period
 	FlowProb       decimal.Decimal `json:"flow_prob"`      // combined probability of payment
 	FlowAmount     decimal.Decimal `json:"flow_amount"`    // expected amount = renta × pct × flow_prob
 	DiscountFactor decimal.Decimal `json:"discount_factor"`
@@ -56,13 +56,16 @@ func NewFlowProjector(me *MortalityEngine) *FlowProjector {
 //	Causante:   flow(t) = R × tpx_causante(t)
 //	Beneficiary: flow(t) = R × pct × tpx_ben(t) × [1 - tpx_causante(t)]
 //
-// The beneficiary receives their share only after the causante has died.
-// Projection runs until all members are certainly dead (max table age reached).
+// The beneficiary has a survivor pension only after the causante has died.
+// currentYear is the valuation offset in years: the annuity is re-valued from
+// the physical age reached after that many years, so the reserve is dynamic
+// (it decreases as payments lapse) rather than re-anchored at inception.
 func (fp *FlowProjector) Project(
 	policy models.Policy,
 	grupo *models.GrupoFamiliar,
 	rentaAnual decimal.Decimal,
 	discountRate decimal.Decimal,
+	currentYear int,
 ) (*FlowResult, error) {
 	if grupo.Causante == nil {
 		return nil, fmt.Errorf("policy %d has no causante", policy.ID)
@@ -71,15 +74,15 @@ func (fp *FlowProjector) Project(
 	causante := grupo.Causante
 	maxAge := 110 // CMF tables go to age 110
 
-	// Determine projection horizon: from causante age to max table age.
-	horizon := maxAge - causante.EdadContratacion
+	causanteStartAge := causante.EdadContratacion + currentYear
+
+	// Projection horizon from the valuation date to the max table age.
+	horizon := maxAge - causanteStartAge
 	if horizon <= 0 {
 		horizon = 1
 	}
-
-	// For each beneficiary, also consider their horizon.
 	for _, b := range grupo.Beneficiarios {
-		benHorizon := maxAge - b.EdadContratacion
+		benHorizon := maxAge - (b.EdadContratacion + currentYear)
 		if benHorizon > horizon {
 			horizon = benHorizon
 		}
@@ -91,27 +94,27 @@ func (fp *FlowProjector) Project(
 
 	startDate := policy.FechaInicio
 
-	for t := 0; t <= horizon; t++ {
-		date := startDate.AddDate(t, 0, 0)
-		discountFactor := computeDiscountFactor(discountRate, t)
+	for k := 0; k <= horizon; k++ {
+		date := startDate.AddDate(currentYear+k, 0, 0)
+		discountFactor := computeDiscountFactor(discountRate, k)
 
 		// --- Causante flow ---
-		tpxCausante, err := fp.mortality.Tpx(causante.TablaAsignada, causante.EdadContratacion, t)
+		tpxCausante, err := fp.mortality.Tpx(causante.TablaAsignada, causanteStartAge, k)
 		if err != nil {
-			return nil, fmt.Errorf("causante tpx at t=%d: %w", t, err)
+			return nil, fmt.Errorf("causante tpx at t=%d: %w", k, err)
 		}
-		if t == 0 {
+		if k == 0 {
 			tpxCausante = one
 		}
 
 		if tpxCausante.GreaterThan(decimal.Zero) {
 			cf := MemberFlow{
-				Period:         t,
+				Period:         k,
 				Date:           date,
 				MemberRol:      string(causante.Rol),
 				MemberSex:      causante.Sexo,
 				MemberTable:    causante.TablaAsignada,
-				MemberAgeAtT:   causante.EdadContratacion + t,
+				MemberAgeAtT:   causanteStartAge + k,
 				RentaBase:      rentaAnual,
 				PctRenta:       one,
 				SurvivalProb:   tpxCausante,
@@ -131,18 +134,19 @@ func (fp *FlowProjector) Project(
 				continue
 			}
 
-			tpxBen, err := fp.mortality.Tpx(b.TablaAsignada, b.EdadContratacion, t)
+			benStartAge := b.EdadContratacion + currentYear
+			tpxBen, err := fp.mortality.Tpx(b.TablaAsignada, benStartAge, k)
 			if err != nil {
-				return nil, fmt.Errorf("beneficiary %s tpx at t=%d: %w", b.Rol, t, err)
+				return nil, fmt.Errorf("beneficiary %s tpx at t=%d: %w", b.Rol, k, err)
 			}
-			if t == 0 {
+			if k == 0 {
 				tpxBen = one
 			}
 			if tpxBen.IsZero() {
 				continue
 			}
 
-			// Beneficiary receives pension only if causante is dead by period t.
+			// Beneficiary receives pension only when the causante is dead by period k.
 			probCausanteDead := one.Sub(tpxCausante)
 			if probCausanteDead.LessThanOrEqual(decimal.Zero) {
 				continue
@@ -156,12 +160,12 @@ func (fp *FlowProjector) Project(
 			benRenta := rentaAnual.Mul(b.PorcentajeRenta)
 
 			bf := MemberFlow{
-				Period:         t,
+				Period:         k,
 				Date:           date,
 				MemberRol:      string(b.Rol),
 				MemberSex:      b.Sexo,
 				MemberTable:    b.TablaAsignada,
-				MemberAgeAtT:   b.EdadContratacion + t,
+				MemberAgeAtT:   benStartAge + k,
 				RentaBase:      benRenta,
 				PctRenta:       b.PorcentajeRenta,
 				SurvivalProb:   tpxBen,
@@ -187,16 +191,14 @@ func (fp *FlowProjector) Project(
 	}, nil
 }
 
-// computeDiscountFactor returns (1 + rate)^(-t).
-// At t=0 the factor is 1.0.
-func computeDiscountFactor(rate decimal.Decimal, t int) decimal.Decimal {
-	if t == 0 {
+// computeDiscountFactor returns (1 + rate)^(-k). At k=0 the factor is 1.0.
+func computeDiscountFactor(rate decimal.Decimal, k int) decimal.Decimal {
+	if k == 0 {
 		return decimal.NewFromInt(1)
 	}
 	base := decimal.NewFromInt(1).Add(rate)
-	// base^(-t) = 1 / base^t
 	pow := decimal.NewFromInt(1)
-	for i := 0; i < t; i++ {
+	for i := 0; i < k; i++ {
 		pow = pow.Mul(base)
 	}
 	return decimal.NewFromInt(1).Div(pow)
