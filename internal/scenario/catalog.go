@@ -5,13 +5,17 @@ package scenario
 
 // BuiltinScenarios returns predefined family type YAML strings.
 var BuiltinScenarios = map[string]string{
-	"familia_tradicional": familiaTradicional,
-	"familia_vieja":       familiaVieja,
-	"viejo_caliente":      viejoCaliente,
-	"viejo_caliente_ext":  viejoCalienteExtendido,
-	"invalido_joven":      invalidoJoven,
-	"descalce_2009":       descalce2009,
-	"descalce_tm2020":     descalceTM2020,
+	"familia_tradicional":  familiaTradicional,
+	"familia_vieja":        familiaVieja,
+	"viejo_caliente":       viejoCaliente,
+	"viejo_caliente_ext":   viejoCalienteExtendido,
+	"invalido_joven":       invalidoJoven,
+	"invalido_parcial":     invalidoParcial,
+	"vejez_anticipada":     vejezAnticipada,
+	"sobrevivencia_pura":   sobrevivenciaPura,
+	"mujer_causante":       mujerCausante,
+	"descalce_2009":        descalce2009,
+	"descalce_tm2020":      descalceTM2020,
 }
 
 const familiaTradicional = `
@@ -305,4 +309,172 @@ grupo_familiar:
     hijos_comunes: 0
 
 events: []
+`
+
+const vejezAnticipada = `
+name: vejez_anticipada
+description: Vejez anticipada - hombre 58 anos (tipo 05), pensionado antes de edad legal, con conyuge
+horizon: 55
+
+policy:
+  capital_uf: 4500.0
+  tasa_tm: 0.036
+  tasa_tc: 0.033
+  tipo_pension: "05"   # RV Vejez Edad Anticipada
+  modalidad_renta: "3120"
+  periodo_garantizado_meses: 120
+
+causante:
+  rol: CAUSANTE
+  sexo: M
+  edad: 58
+  fecha_nacimiento: "1966-06-20"
+  tipo_c1194: "99"
+
+grupo_familiar:
+  - rol: CONYUGE
+    sexo: F
+    edad: 55
+    fecha_nacimiento: "1969-09-14"
+    tipo_c1194: "10"
+    matrimonio_anios: 30
+    hijos_comunes: 0
+
+events:
+  - year: 15
+    type: KILL_MEMBER
+    target_rol: CAUSANTE
+    target_sexo: M
+`
+
+const invalidoParcial = `
+name: invalido_parcial
+description: Invalidez parcial (tipo 07) - causante 50 anos con MI-H-2020, sobrevivencia con tabla MI
+horizon: 60
+
+policy:
+  capital_uf: 3500.0
+  tasa_tm: 0.040
+  tasa_tc: 0.038
+  tipo_pension: "07"   # RV Invalidez Parcial
+  modalidad_renta: "1000"
+
+causante:
+  rol: CAUSANTE
+  sexo: M
+  edad: 50
+  fecha_nacimiento: "1974-03-10"
+  tipo_c1194: "99"
+
+grupo_familiar:
+  - rol: CONYUGE
+    sexo: F
+    edad: 48
+    fecha_nacimiento: "1976-07-22"
+    tipo_c1194: "11"
+    matrimonio_anios: 20
+    hijos_comunes: 2
+  - rol: HIJO
+    sexo: M
+    edad: 16
+    fecha_nacimiento: "2008-11-05"
+    tipo_c1194: "35"
+    condicion: ESTUDIANTE
+    fin_derecho_edad: 24
+  - rol: HIJO
+    sexo: F
+    edad: 12
+    fecha_nacimiento: "2012-04-18"
+    tipo_c1194: "30"
+    condicion: MENOR
+    fin_derecho_edad: 24
+
+events:
+  - year: 8
+    type: HIJO_CUMPLE_24
+    target_rol: HIJO
+  - year: 20
+    type: KILL_MEMBER
+    target_rol: CAUSANTE
+    target_sexo: M
+`
+
+const sobrevivenciaPura = `
+name: sobrevivencia_pura
+description: Sobrevivencia pura (tipo 08) - causante ya fallecido, solo conyuge e hijo recibiendo pension
+horizon: 50
+
+policy:
+  capital_uf: 4000.0
+  tasa_tm: 0.038
+  tasa_tc: 0.035
+  tipo_pension: "08"   # RV Sobrevivencia
+  modalidad_renta: "1000"
+
+causante:
+  rol: CAUSANTE
+  sexo: M
+  edad: 70
+  fecha_nacimiento: "1954-02-10"
+  tipo_c1194: "99"
+
+grupo_familiar:
+  - rol: CONYUGE
+    sexo: F
+    edad: 62
+    fecha_nacimiento: "1962-05-15"
+    tipo_c1194: "10"
+    matrimonio_anios: 35
+    hijos_comunes: 0
+  - rol: HIJO
+    sexo: M
+    edad: 18
+    fecha_nacimiento: "2006-08-20"
+    tipo_c1194: "30"
+    condicion: ESTUDIANTE
+    fin_derecho_edad: 24
+
+# Causante ya fallecido al inicio
+events:
+  - year: 0
+    type: KILL_MEMBER
+    target_rol: CAUSANTE
+    target_sexo: M
+`
+
+const mujerCausante = `
+name: mujer_causante
+description: Mujer causante (RV-M-2020) pensionada por vejez, con conyuge hombre sobreviviente
+horizon: 50
+
+policy:
+  capital_uf: 5500.0
+  tasa_tm: 0.039
+  tasa_tc: 0.036
+  tipo_pension: "04"
+  modalidad_renta: "2000"
+  periodo_aumento_meses: 24
+  porcentaje_aumento: 15.0
+
+causante:
+  rol: CAUSANTE
+  sexo: F
+  edad: 60
+  fecha_nacimiento: "1964-12-01"
+  tipo_c1194: "99"
+
+grupo_familiar:
+  - rol: CONYUGE
+    sexo: M
+    edad: 63
+    fecha_nacimiento: "1961-03-15"
+    tipo_c1194: "10"
+    matrimonio_anios: 38
+    hijos_comunes: 0
+
+events:
+  - year: 18
+    type: KILL_MEMBER
+    target_rol: CAUSANTE
+    target_sexo: F
 `

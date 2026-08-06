@@ -12,6 +12,7 @@ import (
 	"reservas/internal/calculator"
 	"reservas/internal/config"
 	"reservas/internal/database"
+	"reservas/internal/generator"
 	"reservas/internal/loader"
 	"reservas/internal/models"
 	"reservas/internal/scenario"
@@ -36,6 +37,7 @@ func main() {
 	exportFlag := flag.String("calc-export", "", "Calculate and export flows to Excel (policy ID)")
 	scenarioFlag := flag.String("scenario", "", "Run simulation from YAML file or builtin name")
 	scenarioAllFlag := flag.Bool("scenario-all", false, "Run all builtin scenarios and compare")
+	genRisFlag := flag.String("gen-ris", "", "Generate RIS file for policy ID")
 
 	flag.Parse()
 
@@ -87,6 +89,8 @@ func main() {
 		handleScenario(db, *scenarioFlag)
 	case *scenarioAllFlag:
 		handleScenarioAll(db)
+	case *genRisFlag != "":
+		handleGenRIS(db, *genRisFlag)
 	default:
 		fmt.Println("Use -help for available commands")
 		fmt.Println("Available options:")
@@ -100,6 +104,7 @@ func main() {
 		fmt.Println("  -calc-export <id>  Calculate and export flows to Excel")
 		fmt.Println("  -scenario <name>    Run simulation (YAML file or builtin name)")
 		fmt.Println("  -scenario-all       Run all builtin scenarios and compare")
+		fmt.Println("  -gen-ris <id>       Generate RIS file for policy")
 		fmt.Println("  -version           Show version")
 		fmt.Println("  -config <path>     Configuration file path")
 	}
@@ -685,4 +690,69 @@ func joinStrings(ss []string, sep string) string {
 		result += sep + ss[i]
 	}
 	return result
+}
+
+func handleGenRIS(db *database.DB, polizaIDStr string) {
+	var polizaID int
+	if _, err := fmt.Sscanf(polizaIDStr, "%d", &polizaID); err != nil {
+		log.Fatalf("Invalid policy ID: %s", polizaIDStr)
+	}
+
+	policyRepo := database.NewPolicyRepository(db.DB)
+	policy, err := policyRepo.GetByID(polizaID)
+	if err != nil {
+		log.Fatalf("Policy not found: %v", err)
+	}
+
+	benRepo := database.NewBeneficiarioRepository(db.DB)
+	members, err := benRepo.GetByPoliza(polizaID)
+	if err != nil {
+		log.Fatalf("Failed to get members: %v", err)
+	}
+
+	mortRepo := database.NewMortalityRepository(db.DB)
+	calc := calculator.NewReserveCalculator(mortRepo)
+
+	grupo, _ := benRepo.GetGrupoFamiliar(polizaID)
+	rentaAnual := decimal.NewFromFloat(1)
+	if grupo.Causante != nil {
+		unitResult, _ := calc.Calculate(*policy, grupo, decimal.NewFromInt(1))
+		if unitResult.TotalReserve.GreaterThan(decimal.Zero) {
+			rentaAnual = policy.CapitalAsegurado.Div(unitResult.TotalReserve)
+		}
+	}
+	result, _ := calc.Calculate(*policy, grupo, rentaAnual)
+
+	reserves := make(map[string]decimal.Decimal)
+	for _, f := range result.Flows {
+		reserves[f.MemberRol] = reserves[f.MemberRol].Add(f.PresentValue)
+	}
+
+	risPolicy := generator.FromSimulation(policy, members, rentaAnual, reserves)
+
+	rec := &generator.RISRecord{
+		ReportingPeriod: time.Now(),
+		RUTCompania:     "76.000.000-0",
+		Policies:        []generator.RISPolicyRecord{*risPolicy},
+	}
+
+	fileName := generator.FileName(time.Now())
+	f, err := os.Create(fileName)
+	if err != nil {
+		log.Fatalf("Failed to create RIS file: %v", err)
+	}
+	defer f.Close()
+
+	if err := generator.Generate(f, rec); err != nil {
+		log.Fatalf("Failed to generate RIS: %v", err)
+	}
+
+	info, _ := os.Stat(fileName)
+	fmt.Printf("RIS generated: %s (%d bytes)\n", fileName, info.Size())
+	fmt.Println("Records:")
+	fmt.Printf("  Registro 1: Header\n")
+	fmt.Printf("  Registro 2: Poliza %s (tipo %s, modalidad %s)\n",
+		policy.NumeroPoliza, policy.TipoPension, policy.ModalidadRenta)
+	fmt.Printf("  Registro 3: %d personas\n", len(members))
+	fmt.Println("  Registro 4: Totales")
 }
