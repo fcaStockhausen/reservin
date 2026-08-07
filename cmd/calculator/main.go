@@ -184,9 +184,75 @@ func handleImport(db *database.DB, cfg config.Config, importType string) {
 		handleImportVTD(db, cfg)
 	case "tm":
 		handleImportTM(db, cfg)
+	case "vtdcsv":
+		handleImportVTDCSV(db)
 	default:
-		log.Fatalf("Unknown import type: %s. Use 'mortality', 'circular491', 'vtd' or 'tm'", importType)
+		log.Fatalf("Unknown import type: %s. Use 'mortality', 'circular491', 'vtd', 'tm' or 'vtdcsv'", importType)
 	}
+}
+
+// handleImportVTDCSV imports the scraped historical VTD series (2015-2020) from
+// a CSV with columns year, month, period, rate (rate as decimal fraction). See
+// scripts/scrape_vtd_cmf.py. Uses INSERT OR REPLACE per (year, month, period).
+func handleImportVTDCSV(db *database.DB) {
+	csvPath := ""
+	args := flag.Args()
+	if len(args) > 0 {
+		csvPath = args[0]
+	}
+	if csvPath == "" {
+		csvPath = "data/vtd_historico_2015_2020.csv"
+	}
+	fmt.Printf("Importing historical VTD from %s...\n", csvPath)
+
+	f, err := os.Open(csvPath)
+	if err != nil {
+		log.Fatalf("Failed to open VTD CSV: %v", err)
+	}
+	defer f.Close()
+
+	scanner := bufio.NewScanner(f)
+	first := true
+	var points []models.VTDPoint
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" {
+			continue
+		}
+		if first {
+			first = false
+			if strings.HasPrefix(line, "year") {
+				continue // skip header
+			}
+		}
+		parts := strings.Split(line, ",")
+		if len(parts) < 4 {
+			log.Fatalf("Malformed VTD line: %q", line)
+		}
+		year, err1 := strconv.Atoi(strings.TrimSpace(parts[0]))
+		month, err2 := strconv.Atoi(strings.TrimSpace(parts[1]))
+		period, err3 := strconv.Atoi(strings.TrimSpace(parts[2]))
+		rate, err4 := strconv.ParseFloat(strings.TrimSpace(parts[3]), 64)
+		if err1 != nil || err2 != nil || err3 != nil || err4 != nil {
+			log.Fatalf("Malformed VTD line: %q", line)
+		}
+		points = append(points, models.VTDPoint{
+			Year:            year,
+			Month:           month,
+			Period:          period,
+			Rate:            decimal.NewFromFloat(rate),
+			PublicationDate: time.Date(year, time.Month(month), 1, 0, 0, 0, 0, time.UTC),
+		})
+	}
+	if err := scanner.Err(); err != nil {
+		log.Fatalf("Error reading VTD CSV: %v", err)
+	}
+
+	repo := database.NewVTDRepository(db.DB)
+	if err := repo.BatchInsert(points); err != nil {
+		log.Fatalf("Failed to insert VTD points: %v", err)
+	}
+	fmt.Printf("Imported %d VTD points\n", len(points))
 }
 
 // handleImportTM loads the historical TM monthly series from a CSV file

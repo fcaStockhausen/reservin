@@ -241,6 +241,32 @@ Referencia completa de fórmulas: `docs/analysis/formulas_cnu_nt9.md`.
   +6.02% → **+5.94%**. Costo: ~2 proyecciones por póliza (emisión + valuación),
   50K en ~87s.
 
+### 2.13 TM histórica oficial (cohortes pre-TCj)
+- El campo `TASA-CTO-EMISION` del RIS es la **TCj** (tasa de costo de emisión
+  equivalente), NO la TM. `TASA-VENTA` es la **TVj**. La tasa de la reserva
+  pre-TCj es TM (Circular 1512) o `min(TM, TVj)` (NCG 318 §2.3a).
+- Cargada la **TM histórica oficial** (articles-15709, 1988-2026, 451 meses) en
+  la tabla `tm_historica` (migración v5) + `-import tm <csv>`.
+- El validador usa la TM histórica para pre-2012 y min(TM, TVj) para 2012-may2015.
+  Para jun2015-nov2020 sin VTD consolidado, usa la **TCj reportada** por el RIS.
+- **Impacto (50K)**: global +5.94% → **+3.27%**, pre-2005 +26.8% → **+14.14%**,
+  causante_solo +2.09% → **+0.17%**, con_conyuge → **+0.37%**.
+
+### 2.14 Scraper VTD histórico 2015-2020 (NCG 374) — referencial, no usado
+- Los VTD de jun2015-ago2020 se publicaron solo como Oficios Circulares en PDF
+  escaneado (no hay consolidado). Construido `scripts/scrape_vtd_cmf.py`:
+  consulta el buscador de normativa CMF, filtra los oficios "VTD ... NCG N° 374",
+  descarga el PDF, hace OCR (tesseract --psm 6) del anexo, extrae el mes de
+  aplicación del texto y la curva de 25 períodos, e interpola huecos.
+- Resultado: 66 meses (2015-03 a 2020-08), 25 períodos cada uno, en
+  `data/vtd_historico_2015_2020.csv` (importable con `-import vtdcsv`).
+- **No se usa para descontar**: al aplicarlo a 2015-2020, post-2012 empeoró de
+  -1.06% a -9.54%. La **TCj reportada por el RIS reproduce mejor la reserva
+  reportada** en esa cohorte. El VTD scraper queda como dataset de referencia.
+  Posibles causas: OCR/interpolación (25 vs 120 períodos) y transición
+  NCG 374 → NCG 446 en 2020-09 (el scraper da negativos donde el oficial da
+  positivos, 1.9pp de diff en el solape).
+
 ---
 
 ## 3. RESULTADO DE LA VALIDACIÓN (10K pólizas, post-fixes)

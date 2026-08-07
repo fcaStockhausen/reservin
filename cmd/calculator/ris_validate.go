@@ -265,17 +265,18 @@ func flatRateForCohorte(tmRepo *database.TMRepository, rb risBuildResult) *decim
 // installIssuanceVTD loads the VTD curve for the policy's issuance month when
 // the cohort requires TCj (jun2015+) and the historical VTD is available in
 // the DB. When the VTD is unavailable (pre-sep2020 issuances), the projector
-// falls back to the flat min(TM, TV) rate set in the policy.
+// falls back to the flat rate: pre-2012 -> TM, 2012-may2015 -> min(TM, TVj),
+// jun2015-nov2020 -> TCj reported by the RIS (TASA-CTO-EMISION).
 //
-// The cutoff 2020-09-01 reflects the earliest VTD vector currently loaded.
-// Returns true when the issuance-month VTD curve was installed (so the caller
-// can compute the TCj TIR), false otherwise.
+// We only compute the TCj from the VTD curve for 2020-09 onward, where the
+// official consolidated VTD (NCG 446, articles-51926) is available. The
+// scraped 2015-2020 VTD (scripts/scrape_vtd_cmf.py, NCG 374) was tested and
+// WORSENS the validation (post-2012 -1.06% -> -9.54%), so it is kept as a
+// reference dataset but not used for reserve discounting; the TCj the RIS
+// reports reproduces the reported reserve better for that cohort.
 func installIssuanceVTD(calc *calculator.ReserveCalculator, contractDate time.Time) bool {
 	vtdCutoff := time.Date(2020, 9, 1, 0, 0, 0, 0, time.UTC)
-	tcjCutoff := time.Date(2015, 6, 1, 0, 0, 0, 0, time.UTC)
-	if contractDate.Before(tcjCutoff) || contractDate.Before(vtdCutoff) {
-		// Pre-TCj regime or VTD unavailable: use flat rate from policy.
-		// Reset any previously installed curve so the next policy starts clean.
+	if contractDate.Before(vtdCutoff) {
 		calc.ClearVTD()
 		calc.ClearTasaDescuento()
 		return false
