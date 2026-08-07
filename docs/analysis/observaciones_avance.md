@@ -60,16 +60,34 @@ El VTD **cierra el gap a <3% en las pólizas donde aplica** (verificada SVS=8538
    los inválidos pre-2005 caen a B-85. El parser `SituacionInvalidez=="I"` estaba
    mal (debe ser "T"/"P"). Ambos corregidos.
 
-### Breackdown por tipo de familia (10K pólizas, con todos los fixes)
+### Breackdown por tipo de familia (50K muestra, con todos los fixes + NT9 hijos)
 
-| Tipo | n | diff |
-|---|---|---|
-| causante_solo | 1777 | **+2.30%** ✓ |
-| con_conyuge | 3044 | **+1.92%** ✓ |
-| con_hijos | 413 | +21.90% |
-| conyuge_hijos | 1225 | +11.08% |
-| mixto | 79 | +6.50% |
-| **sin_causante_vivo** | 1779 | **+28.12%** ← concentrado en pre-2020 sin VTD |
+| Tipo | diff |
+|---|---|
+| causante_solo | +2.16% ✓ |
+| con_conyuge | +2.39% ✓ |
+| **con_hijos** | **+2.68%** ✓ (antes +21.9%, fix NT9 ec.13) |
+| conyuge_hijos | +3.64% ✓ (antes +11.1%) |
+| mixto | -2.92% |
+| sin_causante_vivo | +26.32% ← concentrado en pre-2020 sin VTD |
+
+Global: **+6.02%** (bajó de +8.52%).
+
+Por estrato: post-2012 **+0.16%** (cuasi perfecto), 2005-2011 +17.9%, pre-2005 +26.8%.
+El gap restante se concentra casi exclusivamente en stock pre-2020 sin VTD histórico.
+
+### Fix NT9 ec.13/15/19/20 (límite hijos a 24 años)
+
+La NT9 establece que los hijos tienen derecho a pensión solo hasta los 24 años
+(18, o 24 si estudiantes). Las ecuaciones (13), (15), (19), (20) todas limitan
+la suma a `t = 23 - h_j` años. El motor proyectaba hijos hasta edad 110,
+sobrestimando enormemente las reservas de pólizas con hijos.
+
+Fix en `internal/calculator/flow.go`: cada beneficiario con `Rol=RolHijo`
+recibe `maxK = 24 - startAge`, y los flujos se cortan en `k > maxK`. Impacto:
+`con_hijos` bajó de +21.9% a +2.7%, `conyuge_hijos` de +11.1% a +3.6%.
+
+Referencia completa de fórmulas: `docs/analysis/formulas_cnu_nt9.md`.
 
 ### Próximos pasos prioritarios
 

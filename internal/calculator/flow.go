@@ -139,15 +139,32 @@ func (fp *FlowProjector) Project(
 		startAge int
 		table    string
 		pct      decimal.Decimal
+		// maxK is the last period this beneficiary can receive a pension.
+		// Children (RolHijo) lose pension rights at age 24 per NT9 ec.13/15/19/20;
+		// spouses and parents are life annuities (no extra limit).
+		maxK int
 	}
+	const hijoEdadLimite = 24
 	var beneficiaries []benRec
 	for _, b := range grupo.Beneficiarios {
 		if b.Estado != "ACTIVO" {
 			continue
 		}
 		sa := b.EdadContratacion + currentYear
+		// NT9: children receive pension only up to age 24 (18, or 24 if student).
+		// Limit their projection horizon accordingly; beyond that they get 0.
+		maxK := horizon
+		if b.Rol == models.RolHijo {
+			limite := hijoEdadLimite - sa
+			if limite < 0 {
+				limite = 0
+			}
+			if limite < maxK {
+				maxK = limite
+			}
+		}
 		bh := maxAge - sa
-		if bh > horizon {
+		if b.Rol != models.RolHijo && bh > horizon {
 			horizon = bh
 		}
 		beneficiaries = append(beneficiaries, benRec{
@@ -155,6 +172,7 @@ func (fp *FlowProjector) Project(
 			startAge: sa,
 			table:    b.TablaAsignada,
 			pct:      b.PorcentajeRenta,
+			maxK:     maxK,
 		})
 	}
 
@@ -245,10 +263,14 @@ func (fp *FlowProjector) Project(
 		// --- Beneficiary flows (survivor pension) ---
 		// Survivors receive only after the guaranteed period expires; during PG
 		// the guaranteed payments go to the estate/designated beneficiaries.
+		// Children (RolHijo) additionally stop receiving at age 24 (NT9 ec.13).
 		if k >= pgYears {
 			probCausanteDead := one.Sub(cSurv)
 			if probCausanteDead.GreaterThan(zero) {
 				for i, rec := range beneficiaries {
+					if k > rec.maxK {
+						continue
+					}
 					if benSurvs[i].IsZero() {
 						continue
 					}

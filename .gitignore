@@ -35,7 +35,7 @@ data/*.db-wal
 test/
 
 # Local-only analysis scratch (WIP / superseded docs that don't belong in the repo)
-analysis/
+/analysis/
 
 # Editor
 .vscode/
