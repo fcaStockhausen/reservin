@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"reservas/internal/models"
+	"github.com/fcaStockhausen/reservin/internal/models"
 )
 
 // VTDRepository handles VTD vector database operations

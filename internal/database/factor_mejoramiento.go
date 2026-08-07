@@ -5,7 +5,7 @@ import (
 
 	"github.com/shopspring/decimal"
 
-	"reservas/internal/models"
+	"github.com/fcaStockhausen/reservin/internal/models"
 )
 
 // FactorMejoramientoRepository handles the mortality improvement factors table.

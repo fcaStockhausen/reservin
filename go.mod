@@ -1,4 +1,4 @@
-module reservas
+module github.com/fcaStockhausen/reservin
 
 go 1.25.0
 

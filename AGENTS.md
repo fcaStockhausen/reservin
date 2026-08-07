@@ -3,12 +3,12 @@
 Guía para cualquier agente (humano o IA) que trabaje en este repo. Léela antes
 de tocar nada.
 
-## Qué es este proyecto
+## Qué es Reservín
 
-Motor actuarial en Go que calcula reservas técnicas (VPPj) de rentas vitalicias
-del sistema chileno y las valida contra el RIS (Circular 1194) que reportan las
-compañías a la CMF. El objetivo actual es **cerrar el gap** entre la reserva
-calculada y la reportada.
+**Reservín** (`github.com/fcaStockhausen/reservin`) es un motor actuarial en Go
+que calcula reservas técnicas (VPPj) de rentas vitalicias del sistema chileno y
+las valida contra el RIS (Circular 1194) que reportan las compañías a la CMF. El
+objetivo actual es **cerrar el gap** entre la reserva calculada y la reportada.
 
 **Lee primero:** [docs/analysis/observaciones_avance.md](docs/analysis/observaciones_avance.md)
 — tiene el estado actual, los hallazgos clave, los bugs ya corregidos y los

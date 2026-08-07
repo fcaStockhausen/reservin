@@ -6,8 +6,8 @@ import (
 
 	"github.com/shopspring/decimal"
 
-	"reservas/internal/database"
-	"reservas/internal/models"
+	"github.com/fcaStockhausen/reservin/internal/database"
+	"github.com/fcaStockhausen/reservin/internal/models"
 )
 
 // MemberFlow represents a single projected cash flow for one family member

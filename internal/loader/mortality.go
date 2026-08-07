@@ -10,7 +10,7 @@ import (
 	"github.com/shopspring/decimal"
 	"github.com/xuri/excelize/v2"
 
-	"reservas/internal/models"
+	"github.com/fcaStockhausen/reservin/internal/models"
 )
 
 // MortalityLoader parses the CMF mortality tables Excel file into MortalityTable records.

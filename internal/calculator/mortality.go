@@ -5,7 +5,7 @@ import (
 
 	"github.com/shopspring/decimal"
 
-	"reservas/internal/database"
+	"github.com/fcaStockhausen/reservin/internal/database"
 )
 
 // MortalityEngine provides survival probability lookups (tpx) from mortality

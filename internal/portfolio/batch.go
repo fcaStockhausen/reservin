@@ -8,8 +8,8 @@ import (
 
 	"github.com/shopspring/decimal"
 
-	"reservas/internal/calculator"
-	"reservas/internal/database"
+	"github.com/fcaStockhausen/reservin/internal/calculator"
+	"github.com/fcaStockhausen/reservin/internal/database"
 )
 
 // BatchResult holds the result of calculating one policy in the batch.

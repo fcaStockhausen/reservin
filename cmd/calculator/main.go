@@ -11,14 +11,14 @@ import (
 
 	"github.com/shopspring/decimal"
 
-	"reservas/internal/calculator"
-	"reservas/internal/config"
-	"reservas/internal/database"
-	"reservas/internal/generator"
-	"reservas/internal/loader"
-	"reservas/internal/models"
-	"reservas/internal/portfolio"
-	"reservas/internal/scenario"
+	"github.com/fcaStockhausen/reservin/internal/calculator"
+	"github.com/fcaStockhausen/reservin/internal/config"
+	"github.com/fcaStockhausen/reservin/internal/database"
+	"github.com/fcaStockhausen/reservin/internal/generator"
+	"github.com/fcaStockhausen/reservin/internal/loader"
+	"github.com/fcaStockhausen/reservin/internal/models"
+	"github.com/fcaStockhausen/reservin/internal/portfolio"
+	"github.com/fcaStockhausen/reservin/internal/scenario"
 )
 
 const (

@@ -6,8 +6,8 @@ import (
 
 	"github.com/shopspring/decimal"
 
-	"reservas/internal/database"
-	"reservas/internal/models"
+	"github.com/fcaStockhausen/reservin/internal/database"
+	"github.com/fcaStockhausen/reservin/internal/models"
 )
 
 // SVS=730135: causante F nac 1950-12-10, contract 2005-03-01, renta 9.43/mes

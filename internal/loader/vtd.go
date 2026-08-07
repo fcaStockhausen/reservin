@@ -9,7 +9,7 @@ import (
 	"github.com/shopspring/decimal"
 	"github.com/xuri/excelize/v2"
 
-	"reservas/internal/models"
+	"github.com/fcaStockhausen/reservin/internal/models"
 )
 
 // VTDLoader parses the CMF VTD (Vector Tasa de Descuento) Excel file into VTDPoint records.

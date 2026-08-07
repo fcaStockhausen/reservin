@@ -4,7 +4,7 @@ import (
 	"database/sql"
 	"time"
 
-	"reservas/internal/models"
+	"github.com/fcaStockhausen/reservin/internal/models"
 	"github.com/shopspring/decimal"
 )
 

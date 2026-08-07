@@ -9,7 +9,7 @@ import (
 	"github.com/shopspring/decimal"
 	"github.com/xuri/excelize/v2"
 
-	"reservas/internal/models"
+	"github.com/fcaStockhausen/reservin/internal/models"
 )
 
 // Circular491Loader parses the Circular N°491 (29.03.1985) mortality tables

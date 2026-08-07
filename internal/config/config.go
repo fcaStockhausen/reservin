@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"reservas/internal/database"
+	"github.com/fcaStockhausen/reservin/internal/database"
 )
 
 // Config represents application configuration

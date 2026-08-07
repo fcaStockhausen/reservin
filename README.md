@@ -1,4 +1,6 @@
-# Calculadora de Reservas de Rentas Vitalicias
+# Reservín
+
+> *La clave está en lo simple.*
 
 Motor actuarial en Go para calcular reservas técnicas (VPPj) de pólizas de renta
 vitalicia del sistema chileno, siguiendo la normativa de la CMF (NCG 318,
@@ -6,6 +8,8 @@ Circular 2332, Circular 1512) y la Nota Técnica N°9 de SPensiones.
 
 El motor se valida contra el archivo RIS (Circular 1194) reportado por las
 compañías a la CMF, comparando la reserva calculada contra la reportada.
+
+**Module:** `github.com/fcaStockhausen/reservin`
 
 ## Estado de la validación
 
@@ -27,7 +31,7 @@ para el detalle y los próximos pasos.
 
 ## Stack
 
-- **Go 1.25** (paquete único `reservas`, sin binarios externos)
+- **Go 1.25** (`github.com/fcaStockhausen/reservin`, sin binarios externos)
 - **SQLite** (`data/reservas.db`) para tablas de mortalidad, VTD, factores de
   mejoramiento y resultados
 - `github.com/shopspring/decimal` para aritmética exacta en UF

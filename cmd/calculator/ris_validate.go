@@ -10,10 +10,10 @@ import (
 
 	"github.com/shopspring/decimal"
 
-	"reservas/internal/calculator"
-	"reservas/internal/database"
-	"reservas/internal/loader"
-	"reservas/internal/models"
+	"github.com/fcaStockhausen/reservin/internal/calculator"
+	"github.com/fcaStockhausen/reservin/internal/database"
+	"github.com/fcaStockhausen/reservin/internal/loader"
+	"github.com/fcaStockhausen/reservin/internal/models"
 )
 
 // diffRec records a per-policy comparison between reported and computed reserve.

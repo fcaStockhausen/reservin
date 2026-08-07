@@ -4,7 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 
-	"reservas/internal/models"
+	"github.com/fcaStockhausen/reservin/internal/models"
 )
 
 type BeneficiarioRepository struct {

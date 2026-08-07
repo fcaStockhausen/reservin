@@ -16,18 +16,18 @@ type DB struct {
 
 // Config represents database configuration
 type Config struct {
-	Path          string        `json:"path"`
-	MaxOpenConns  int           `json:"max_open_conns"`
-	MaxIdleConns  int           `json:"max_idle_conns"`
+	Path            string        `json:"path"`
+	MaxOpenConns    int           `json:"max_open_conns"`
+	MaxIdleConns    int           `json:"max_idle_conns"`
 	ConnMaxLifetime time.Duration `json:"conn_max_lifetime"`
 }
 
 // DefaultConfig returns default database configuration
 func DefaultConfig() Config {
 	return Config{
-		Path:          "./data/reservas.db",
-		MaxOpenConns:  10,
-		MaxIdleConns:  5,
+		Path:            "./data/reservas.db",
+		MaxOpenConns:    10,
+		MaxIdleConns:    5,
 		ConnMaxLifetime: time.Hour,
 	}
 }
@@ -161,7 +161,7 @@ func (db *DB) Backup(backupPath string) error {
 	if _, err := db.Exec("VACUUM INTO " + backupPath); err != nil {
 		return fmt.Errorf("failed to create backup: %w", err)
 	}
-	
+
 	log.Printf("Database backup created: %s", backupPath)
 	return nil
 }

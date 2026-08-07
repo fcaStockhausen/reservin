@@ -7,9 +7,9 @@ import (
 
 	"github.com/shopspring/decimal"
 
-	"reservas/internal/calculator"
-	"reservas/internal/database"
-	"reservas/internal/models"
+	"github.com/fcaStockhausen/reservin/internal/calculator"
+	"github.com/fcaStockhausen/reservin/internal/database"
+	"github.com/fcaStockhausen/reservin/internal/models"
 )
 
 // Simulator evolves a scenario through time, applying events and recalculating

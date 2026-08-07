@@ -20,7 +20,7 @@ import (
 
 	"github.com/shopspring/decimal"
 
-	"reservas/internal/models"
+	"github.com/fcaStockhausen/reservin/internal/models"
 )
 
 type RISRecord struct {

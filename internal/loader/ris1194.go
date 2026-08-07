@@ -12,7 +12,7 @@ import (
 
 	"github.com/shopspring/decimal"
 
-	"reservas/internal/models"
+	"github.com/fcaStockhausen/reservin/internal/models"
 )
 
 // RIS1194Loader streams the Circular 1194 RIS file (.vta), a fixed-width text
