@@ -16,6 +16,9 @@ pendientes. **No toques el motor sin haberlo leído.**
 
 ## Reglas del proyecto
 
+- **Git push siempre a `origin main`** (GitHub). El remote `server` (Tailscale)
+  existe por compatibilidad pero NO se debe pushear ahí salvo orden explícita
+  del usuario. `git push` a secas ya está configurado para ir a `origin`.
 - **No commitear** `.DS_Store`, `*.xlsx` (excepto `data/normativo/`, `data/vtd/`,
   `docs/normativo/`), `cpu.prof`, `prof`, `prof/`, `cmd/prof/`, `R*.txt`,
   `data/*.zip`, `data/*.vta`. Están en `.gitignore`.
