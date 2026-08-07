@@ -4,8 +4,8 @@
 
 Motor actuarial en Go para calcular reservas técnicas (VPPj) de pólizas de renta
 vitalicia del sistema chileno. **Fast, multinúcleo, performance-driven**: proyecta
-**~1.300 pólizas/seg** en paralelo y valida el RIS completo (959K pólizas) en
-minutos.
+**~1.350 pólizas/seg** en paralelo y valida el RIS completo (959K pólizas) en
+**~10 minutos**.
 
 Sigue la normativa de la CMF (NCG 318, Circular 2332, Circular 1512) y la Nota
 Técnica N°9 de SPensiones. Se valida contra el archivo RIS (Circular 1194) que
@@ -13,22 +13,23 @@ reportan las compañías a la CMF.
 
 [![Go Version](https://img.shields.io/badge/Go-1.25-00ADD8?logo=go&logoColor=white)](https://go.dev)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Benchmark](https://img.shields.io/badge/performance-~1.3K%20p%C3%B3lizas%2Fs-blue)](#performance)
+[![Benchmark](https://img.shields.io/badge/performance-~1.35K%20p%C3%B3lizas%2Fs-blue)](#performance)
 
 ---
 
 ## Estado de la validación
 
-Validación contra RIS 2025-12-31 (959.664 pólizas, 2,15M de beneficiarios):
+Validación contra **RIS completo 2025-12-31** (794.187 pólizas procesadas de
+959.664 sampleadas, 2,15M de beneficiarios):
 
 | Tipo de familia            | Diferencia vs reportado |
 |----------------------------|-------------------------|
-| causante solo              | **+2.3%** ✓             |
-| con cónyuge                | **+1.9%** ✓             |
-| con hijos                  | +21.9%                  |
-| cónyuge + hijos            | +11.1%                  |
-| sin causante vivo          | +28.1%                  |
-| **Global (10K muestra)**   | **+8.5%**               |
+| causante solo              | **+2.6%** ✓             |
+| con cónyuge                | **+2.3%** ✓             |
+| con hijos                  | +22.8%                  |
+| cónyuge + hijos            | +11.8%                  |
+| sin causante vivo          | +26.5%                  |
+| **Global**                 | **+8.68%**              |
 
 El motor está calibrado para pólizas modernas (post-sep-2020 con VTD del mes de
 emisión: gap <3% por póliza). El gap residual se concentra en **stock pre-2020
@@ -177,8 +178,11 @@ diseño) y [docs/analysis/observaciones_avance.md](docs/analysis/observaciones_a
 
 ## Performance
 
-**~1.300 pólizas por segundo.** El RIS completo (959K pólizas) se valida en
-~12 minutos en un laptop; 10K muestra en 7 segundos.
+**~1.350 pólizas por segundo.** El RIS completo (959.664 pólizas, 794K procesadas)
+se valida en **9 min 47 s** en un Apple Silicon; 50K muestra en 32 s.
+
+Medición real sobre el archivo RIS 2025-12-31 (733 MB), con tablas, mejoramiento
+AAx, VTD del mes de emisión y comparación contra reservas reportadas.
 
 El motor es paralelo por diseño: cada póliza se calcula independiente, las
 tablas y el VTD se cachean en memoria, y el RIS se streamea con canales para no
@@ -186,8 +190,11 @@ cargar 959K registros en RAM.
 
 ```bash
 go build -o reservin ./cmd/calculator
-time ./reservin -validate-ris /path/to/ris20251231.vta -sample 50000
+time ./reservin -validate-ris /path/to/ris20251231.vta -sample 1000000
 ```
+
+El gap global del archivo completo es **+8,68%** vs reportado (pre-2005 +29,6%,
+post-2012 +2,9%) — ver [Estado de la validación](#estado-de-la-validación).
 
 ## Documentación
 
