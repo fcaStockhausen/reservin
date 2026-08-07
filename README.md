@@ -4,7 +4,6 @@
 
 [![Go Version](https://img.shields.io/badge/Go-1.25-00ADD8?logo=go&logoColor=white)](https://go.dev)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Go Report Card](https://goreportcard.com/badge/github.com/fcaStockhausen/reservin)](https://goreportcard.com/report/github.com/fcaStockhausen/reservin)
 [![Benchmark](https://img.shields.io/badge/performance-~1.3K%20p%C3%B3lizas%2Fs-blue)](#performance)
 
 Motor actuarial en Go para calcular reservas técnicas (VPPj) de pólizas de renta
