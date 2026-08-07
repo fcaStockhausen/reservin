@@ -19,21 +19,20 @@ reportan las compañías a la CMF.
 
 ## Estado de la validación
 
-Validación contra **RIS completo 2025-12-31** (794.187 pólizas procesadas de
-959.664 sampleadas, 2,15M de beneficiarios):
+Validación contra **RIS completo 2025-12-31** (50K muestra, 41K procesadas):
 
 | Tipo de familia            | Diferencia vs reportado |
 |----------------------------|-------------------------|
-| causante solo              | **+2.6%** ✓             |
-| con cónyuge                | **+2.3%** ✓             |
-| con hijos                  | +22.8%                  |
-| cónyuge + hijos            | +11.8%                  |
-| sin causante vivo          | +26.5%                  |
-| **Global**                 | **+8.68%**              |
+| causante solo              | **+2.2%** ✓             |
+| con cónyuge                | **+2.4%** ✓             |
+| con hijos                  | **+2.7%** ✓             |
+| cónyuge + hijos            | **+3.6%** ✓             |
+| sin causante vivo          | +26.3%                  |
+| **Global**                 | **+6.0%**               |
 
 El motor está calibrado para pólizas modernas (post-sep-2020 con VTD del mes de
-emisión: gap <3% por póliza). El gap residual se concentra en **stock pre-2020
-sin VTD histórico disponible** — ver
+emisión: **gap <1% por póliza**). El gap residual se concentra en **stock
+pre-2020 sin VTD histórico disponible** — ver
 [docs/analysis/observaciones_avance.md](docs/analysis/observaciones_avance.md).
 
 ## Quick start
