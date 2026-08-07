@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"flag"
 	"fmt"
 	"log"
@@ -181,9 +182,61 @@ func handleImport(db *database.DB, cfg config.Config, importType string) {
 		handleImportCircular491(db, cfg)
 	case "vtd":
 		handleImportVTD(db, cfg)
+	case "tm":
+		handleImportTM(db, cfg)
 	default:
-		log.Fatalf("Unknown import type: %s. Use 'mortality', 'circular491' or 'vtd'", importType)
+		log.Fatalf("Unknown import type: %s. Use 'mortality', 'circular491', 'vtd' or 'tm'", importType)
 	}
+}
+
+// handleImportTM loads the historical TM monthly series from a CSV file
+// (year, month, tasa-as-fraction per line). Source: articles-15709_recurso_1.xls.
+func handleImportTM(db *database.DB, cfg config.Config) {
+	path := flag.Args()
+	csvPath := ""
+	if len(path) > 0 {
+		csvPath = path[0]
+	}
+	if csvPath == "" {
+		csvPath = "data/tm_historica.csv"
+	}
+	fmt.Printf("Importing historical TM from %s...\n", csvPath)
+
+	f, err := os.Open(csvPath)
+	if err != nil {
+		log.Fatalf("Failed to open TM CSV: %v", err)
+	}
+	defer f.Close()
+
+	scanner := bufio.NewScanner(f)
+	var records []database.TMRecord
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" {
+			continue
+		}
+		parts := strings.Split(line, ",")
+		if len(parts) < 3 {
+			log.Fatalf("Malformed TM line: %q", line)
+		}
+		year, err1 := strconv.Atoi(strings.TrimSpace(parts[0]))
+		month, err2 := strconv.Atoi(strings.TrimSpace(parts[1]))
+		tasa, err3 := strconv.ParseFloat(strings.TrimSpace(parts[2]), 64)
+		if err1 != nil || err2 != nil || err3 != nil {
+			log.Fatalf("Malformed TM line: %q", line)
+		}
+		records = append(records, database.TMRecord{Year: year, Month: month, Tasa: tasa})
+	}
+	if err := scanner.Err(); err != nil {
+		log.Fatalf("Error reading TM CSV: %v", err)
+	}
+
+	repo := database.NewTMRepository(db.DB)
+	if err := repo.BatchInsert(records); err != nil {
+		log.Fatalf("Failed to insert TM records: %v", err)
+	}
+	n, _ := repo.Count()
+	fmt.Printf("Imported %d TM months (%d total in DB)\n", len(records), n)
 }
 
 func handleImportMortality(db *database.DB, cfg config.Config) {

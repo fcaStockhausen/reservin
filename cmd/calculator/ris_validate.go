@@ -130,15 +130,16 @@ func buildGrupoFromRIS(ris models.RISPolicy, contemporanea bool) risBuildResult 
 // Returns the computed reserve and a non-nil error explaining why the policy
 // could not be valued (so the caller can surface the cause, not swallow it).
 //
-// Tasa de descuento por cohorte (NCG 318):
-//   - pre-2012 y 2012-may2015: min(TM, TV) de emisión (TasaCostoEmision/TasaVenta)
-//   - jun2015-nov2020: TCj (TIR con VTD del mes de emisión)
-//   - post-dic2020: min(TVj, TCj)
+// Tasa de descuento de la reserva (bautizo) por cohorte:
+//   - pre-2012: TM (Circular 1512). Se usa la TM histórica oficial, NO el campo
+//     TASA-CTO-EMISION del RIS (que es la TCj, tasa de costo de emisión).
+//   - 2012-may2015: min(TM, TVj) (NCG 318 §2.3a). TM histórica oficial + TVj del RIS.
+//   - jun2015-nov2020: TCj (TIR con VTD del mes de emisión, NCG 318 Anexo).
+//   - post-dic2020: min(TVj, TCj).
 //
-// Para cohortes con VTD histórico disponible (post-sep2020), instalamos la
-// curva VTD del mes de emisión como descuento. Para el resto, cae al flat rate
-// min(TM, TV) del RIS (que solo es correcto para 2012-may2015).
-func computeRISReserve(calc *calculator.ReserveCalculator, rb risBuildResult, p models.RISPolicy) (float64, error) {
+// La TCj se computa con el VTD del mes de emisión cuando está disponible
+// (post-sep2020). Para cohortes TCj sin VTD histórico, cae al flat rate del RIS.
+func computeRISReserve(calc *calculator.ReserveCalculator, tmRepo *database.TMRepository, rb risBuildResult, p models.RISPolicy) (float64, error) {
 	rentaMensual := rb.rentaMensual
 	// Fallback chain for the monthly pension: RentaMensual (campo 2.20) →
 	// PensionPersona of the first persona with derecho 99/20 (campo 3.21,
@@ -162,21 +163,29 @@ func computeRISReserve(calc *calculator.ReserveCalculator, rb risBuildResult, p 
 		currentYear = 0
 	}
 
-	// Tasa de descuento por cohorte (NCG 318):
-	//   - pre-2012 y 2012-may2015: min(TM, TV) de emisión (TasaCostoEmision/TasaVenta)
-	//   - jun2015-nov2020: TCj (TIR con VTD del mes de emisión)
-	//   - post-dic2020: min(TVj, TCj)
-	//
-	// Para cohortes con VTD histórico disponible (post-sep2020) instalamos la
-	// curva VTD del mes de emisión y calculamos la TCj (TIR flat, NCG 318 Anexo),
-	// que pasa a ser la tasa de "bautizo" con la que se descuenta la reserva. Para
-	// el resto, cae al flat rate min(TM, TV) del RIS (solo correcto para 2012-may2015).
-	if vtdOK := installIssuanceVTD(calc, rb.contractDate); vtdOK {
+	// Determina la tasa de descuento (bautizo) por cohorte.
+	if installIssuanceVTD(calc, rb.contractDate) {
+		// jun2015+ con VTD: TCj (TIR flat con el VTD del mes de emisión).
 		if tcj, err := calc.ComputeTCj(rb.pol, rb.grupo, rentaAnual); err == nil {
 			calc.SetTasaDescuento(tcj)
 		}
+		return computeReserveWithRate(calc, rb, rentaAnual, currentYear)
 	}
 
+	// Cohortes pre-TCj: la tasa es TM (pre-2012) o min(TM, TVj) (2012-may2015),
+	// con la TM histórica oficial. El RIS no reporta la TM (solo TCj/TVj).
+	rate := flatRateForCohorte(tmRepo, rb)
+	if rate != nil {
+		calc.SetTasaDescuento(*rate)
+	} else {
+		calc.ClearTasaDescuento()
+	}
+	return computeReserveWithRate(calc, rb, rentaAnual, currentYear)
+}
+
+// computeReserveWithRate projects the policy (causante alive or deceased) with
+// the already-set discount rate on the calculator.
+func computeReserveWithRate(calc *calculator.ReserveCalculator, rb risBuildResult, rentaAnual decimal.Decimal, currentYear int) (float64, error) {
 	if rb.causanteVivo && rb.grupo.Causante != nil && rb.grupo.Causante.TablaAsignada != "" {
 		result, err := calc.CalculateAt(rb.pol, rb.grupo, rentaAnual, currentYear)
 		if err != nil {
@@ -207,6 +216,50 @@ func computeRISReserve(calc *calculator.ReserveCalculator, rb risBuildResult, p 
 		total = total.Add(result.TotalReserve)
 	}
 	return total.InexactFloat64(), nil
+}
+
+// flatRateForCohorte returns the flat discount rate for cohorts without an
+// issuance-month VTD in the DB (so no TCj can be computed from VTD):
+//   - pre-2012: TM (Circular 1512). TM histórica oficial.
+//   - 2012-may2015: min(TM, TVj) (NCG 318 §2.3a). TM histórica + TVj del RIS.
+//   - jun2015-nov2020: TCj (NCG 318 Anexo). El RIS reporta la TCj en
+//     TASA-CTO-EMISION (campo 2.22), así que se usa ese valor directamente.
+//
+// Returns nil when no reliable rate is available (falls back to the policy's
+// GetEffectiveDiscountRate).
+func flatRateForCohorte(tmRepo *database.TMRepository, rb risBuildResult) *decimal.Decimal {
+	pre2012 := rb.contractDate.Before(time.Date(2012, 1, 1, 0, 0, 0, 0, time.UTC))
+	preTCj := rb.contractDate.Before(time.Date(2015, 6, 1, 0, 0, 0, 0, time.UTC))
+
+	if pre2012 || (preTCj && !pre2012) {
+		// Cohortes con tasa TM (pre-2012) o min(TM, TVj) (2012-may2015).
+		if tmRepo == nil {
+			return nil
+		}
+		tm, err := tmRepo.GetByYearMonth(rb.contractDate.Year(), int(rb.contractDate.Month()))
+		if err != nil || tm <= 0 {
+			return nil
+		}
+		tmRate := decimal.NewFromFloat(tm)
+		if pre2012 {
+			// Circular 1512: tasa = TM.
+			return &tmRate
+		}
+		// 2012-may2015: min(TM, TVj). TVj = TasaVenta del RIS (campo 2.23).
+		tvj := rb.pol.TasaTC
+		if tvj.LessThan(tmRate) {
+			return &tvj
+		}
+		return &tmRate
+	}
+
+	// jun2015-nov2020 sin VTD histórico: la tasa es TCj, reportada por el RIS
+	// en TASA-CTO-EMISION (campo 2.22) = rb.pol.TasaTM.
+	if rb.pol.TasaTM.GreaterThan(decimal.Zero) {
+		tcj := rb.pol.TasaTM
+		return &tcj
+	}
+	return nil
 }
 
 // installIssuanceVTD loads the VTD curve for the policy's issuance month when
@@ -271,6 +324,7 @@ func ageAt(birth, at time.Time) int {
 // retained, per the retenida flag). mejorar toggles mortality improvement.
 func validateRIS(db *database.DB, path string, sample int, retenida bool, mejorar bool, debugSVS string) {
 	mortRepo := database.NewMortalityRepository(db.DB)
+	tmRepo := database.NewTMRepository(db.DB)
 
 	header, _ := loader.NewRIS1194Loader(path).LoadHeader()
 	if header != nil {
@@ -338,7 +392,7 @@ func validateRIS(db *database.DB, path string, sample int, retenida bool, mejora
 				continue
 			}
 
-			calculated, err := computeRISReserve(calc, rb, p)
+			calculated, err := computeRISReserve(calc, tmRepo, rb, p)
 			if err != nil {
 				skipped++
 				cause := categorizeErr(err)

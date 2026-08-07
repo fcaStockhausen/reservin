@@ -184,6 +184,24 @@ func NewMigrator(db *sql.DB) *Migrator {
 					`CREATE INDEX IF NOT EXISTS idx_factor_mej_nombre_edad ON factor_mejoramiento(nombre_estandar, edad);`,
 				},
 			},
+			{
+				Version:     5,
+				Description: "Add tm_historica table for the historical monthly market rate (TM, Oficio Circular CMF)",
+				SQL: []string{
+					`-- Tasa de Mercado (TM) histórica mensual publicada por la CMF (Oficio Circular).
+					-- Es la tasa de descuento de la reserva para cohortes pre-TCj (Circular 1512 /
+					-- NCG 318 §2.3a: min(TM, TV)). El campo TasaCostoEmision del RIS la reporta mal,
+					-- así que usamos la serie oficial. Fuente: articles-15709_recurso_1.xls (1988-2026).
+					CREATE TABLE IF NOT EXISTS tm_historica (
+						id INTEGER PRIMARY KEY AUTOINCREMENT,
+						year INTEGER NOT NULL,
+						month INTEGER NOT NULL,
+						tasa DECIMAL(8,6) NOT NULL, -- TM como fracción (0.0558 = 5.58%)
+						UNIQUE(year, month)
+					);`,
+					`CREATE INDEX IF NOT EXISTS idx_tm_year_month ON tm_historica(year, month);`,
+				},
+			},
 		},
 	}
 }
