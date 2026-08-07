@@ -1,79 +1,49 @@
-# Documentation - Reservas Calculator
+# Documentación
 
-## Documentation Architecture
+El proyecto tiene una sola fuente de verdad viva y un set cerrado de documentos
+de referencia. Cualquier análisis temporal o WIP vive en `analysis/` (raíz,
+**gitignoreado**) y no se commitea.
 
-This repository follows a consolidated documentation approach with **4 source of truth documents** to avoid fragmentation and ensure clarity.
+## Fuente de verdad viva
 
-## Source of Truth Documents
+- [`analysis/observaciones_avance.md`](analysis/observaciones_avance.md) en el
+  repo raíz — estado actual, hallazgos, bugs corregidos, próximos pasos. Es lo
+  primero que debe leer quien toca el motor.
 
-### 📋 CRUSH.md
-**Purpose:** Agent development guide and project overview
-**Contents:** Technology stack, build commands, Git workflow, professional standards, implementation planning
+  > Nota: la versión tracked está en `docs/analysis/observaciones_avance.md`.
+  > `analysis/` (raíz) es local-only.
 
-### 🛠️ technical_specifications.md
-**Purpose:** Complete technical implementation requirements
-**Contents:** Mathematical formulas, database schema, performance targets, implementation architecture
+## Documentos commiteados
 
-### 📜 normative_framework.md  
-**Purpose:** CMF regulatory framework and compliance requirements
-**Contents:** NCG 318 analysis, missing documents, policy application rules, compliance testing
+### Diseño y normativa
 
-### 🚀 deployment_guide.md
-**Purpose:** Production deployment and operations
-**Contents:** Build process, installation scripts, service management, monitoring, troubleshooting
+- [`docs/ris_simulado_diseno.md`](ris_simulado_diseno.md) — diseño del parser RIS (Circular 1194)
+- [`docs/normative_framework.md`](normative_framework.md) — marco normativo CMF
+- [`docs/technical_specifications.md`](technical_specifications.md) — especificaciones técnicas
+- [`docs/mortality_tables_guide.md`](mortality_tables_guide.md) — guía de tablas de mortalidad
 
-### 📝 implementation_plan.md
-**Purpose:** Complete 8-week implementation roadmap
-**Contents:** Phase-by-phase development plan, technical details, risk management, success criteria
+### Análisis (curado, aporta al desarrollo)
 
-## Supporting Analysis
+- [`docs/analysis/observaciones_avance.md`](analysis/observaciones_avance.md) — estado, evolución del gap, próximos pasos
+- [`docs/analysis/validacion_ris_1194.md`](analysis/validacion_ris_1194.md) — análisis de la validación contra RIS
+- [`docs/analysis/mathematical_formulas.md`](analysis/mathematical_formulas.md) — fórmulas actuariales
+- [`docs/analysis/reserve_calculation_guide.md`](analysis/reserve_calculation_guide.md) — guía de cálculo (NCG 318)
 
-### 📁 analysis/
-**Purpose:** Temporary analysis documents for reference during development
-**Contents:** Detailed Excel analysis, missing references research, implementation notes
+### Normativa primaria (PDFs y summaries)
 
-### 📁 normativo/
-**Purpose:** Regulatory documents and summaries for quick reference
-**Contents:** PDF documents and generated summaries with key regulatory terms
+- [`docs/normativo/`](normativo/) — PDFs originales CMF/SPensiones + summaries generados
 
-**Note:** These documents provide detailed background information but should not be used as primary references. Content should be consolidated into 4 source of truth documents as needed.
+  - NCG 318, NCG 209, NCG 374 — cálculo de reservas
+  - Circular 2332, Circular 1512, Circular 491 — tablas y metodología
+  - Nota Técnica N°9 (SPensiones) — fórmulas del CNU y Cuadro 4
+  - Manual Usuario C1194, Oficio TM 1388/2025, VTD 2025
 
-## Quick Reference
+## Quick reference
 
-| Need | Document | Section |
-|------|----------|---------|
-| **Implementation plan** | implementation_plan.md | Complete 8-week roadmap |
-| **Development setup** | CRUSH.md | Development Environment |
-| **Mathematical formulas** | technical_specifications.md | Core Mathematical Formulas |
-| **CMF compliance** | normative_framework.md | Core Regulatory Requirements |
-| **VTD vector tasa de descuento** | technical_specifications.md | Discount Rate Methodology |
-| **Causante/Beneficiario tables** | normative_framework.md | Mortality Table Requirements |
-| **Build and deploy** | deployment_guide.md | Build Process |
-| **Database schema** | technical_specifications.md | Database Schema |
-| **Performance targets** | technical_specifications.md | Performance Requirements |
-| **Installation** | deployment_guide.md | Installation Scripts |
-
-## Document Philosophy
-
-1. **Single Source of Truth:** Each domain has one authoritative document
-2. **No Fragmentation:** Related information is consolidated, not scattered
-3. **Clear Purpose:** Each document has a well-defined scope
-4. **Professional Standards:** Scientific/regulatory tone throughout
-5. **Maintainability:** Easy to update and reference during development
-
-## Usage Guidelines
-
-### For Development
-- **Primary References:** CRUSH.md + technical_specifications.md
-- **Compliance Checks:** normative_framework.md
-- **Deployment:** deployment_guide.md
-
-### For Regulatory Review
-- **Primary Reference:** normative_framework.md
-- **Technical Details:** technical_specifications.md
-
-### For Operations
-- **Primary Reference:** deployment_guide.md
-- **Troubleshooting:** technical_specifications.md
-
-This architecture ensures clear, maintainable documentation that serves all project stakeholders without information fragmentation.
+| Necesito... | Ver |
+|---|---|
+| Estado actual del proyecto | `docs/analysis/observaciones_avance.md` |
+| Cómo se calcula la reserva | `docs/analysis/mathematical_formulas.md` + `docs/analysis/reserve_calculation_guide.md` |
+| Qué normativa aplica | `docs/normative_framework.md` + `docs/normativo/` |
+| Cómo se parsea el RIS | `docs/ris_simulado_diseno.md` |
+| Reglas para contribuir | [`AGENTS.md`](../AGENTS.md) en el raíz |

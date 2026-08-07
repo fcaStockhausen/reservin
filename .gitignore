@@ -34,6 +34,9 @@ data/*.db-wal
 # Empty scaffolding dirs
 test/
 
+# Local-only analysis scratch (WIP / superseded docs that don't belong in the repo)
+analysis/
+
 # Editor
 .vscode/
 .idea/
