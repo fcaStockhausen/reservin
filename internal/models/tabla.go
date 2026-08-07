@@ -23,114 +23,172 @@ func tableCategory(rol BeneficiarioRol, tipoTabla string) mortalityCategory {
 	return catSobreviv
 }
 
-// Cut-off dates from the CMF Circular N°2332 / NCG N°318 regime.
+// Cut-off dates from Cuadro 4 of Nota Técnica N°9 (SPensiones, Nov 2024).
+// These are the official table-vigencia boundaries.
 var (
-	cutoff2012 = time.Date(2012, 1, 1, 0, 0, 0, 0, time.UTC)
-	cutoff2008 = time.Date(2008, 2, 1, 0, 0, 0, 0, time.UTC)
-	cutoff2005 = time.Date(2005, 3, 9, 0, 0, 0, 0, time.UTC)
-	cutoff2014 = time.Date(2014, 1, 1, 0, 0, 0, 0, time.UTC)
-	cutoff2023 = time.Date(2023, 7, 1, 0, 0, 0, 0, time.UTC)
+	periodStart1 = time.Date(2005, 2, 1, 0, 0, 0, 0, time.UTC) // RV-2004 / B-85
+	periodStart2 = time.Date(2008, 2, 1, 0, 0, 0, 0, time.UTC) // RV-2004 / B-2006
+	periodStart3 = time.Date(2010, 7, 1, 0, 0, 0, 0, time.UTC) // RV-2009 / B-2006
+	periodStart4 = time.Date(2016, 7, 1, 0, 0, 0, 0, time.UTC) // CB-2014 / B-2014
+	periodStart5 = time.Date(2023, 7, 1, 0, 0, 0, 0, time.UTC) // CB-2020 / B-2020
 )
 
-// baseTableYear returns the vintage year of the mortality table anchored to the
-// policy contract date, following the Circular N°2332 stratification.
-func baseTableYear(cat mortalityCategory, d time.Time) int {
-	if !d.Before(cutoff2012) {
-		return 2020
-	}
-	switch cat {
-	case catInvalidez:
-		return 2006 // MI-2006 (MI-85 not loaded in repo data)
-	case catSobreviv:
-		return 2006 // B-2006 (B-85 not loaded in repo data)
-	default: // catRV
-		if !d.Before(cutoff2008) {
-			return 2009
+// cuadro4Table returns the mortality table name for a given category, sex, and
+// date, following the official Cuadro 4 of Nota Técnica N°9 (SPensiones).
+// Each category (afiliado, beneficiario, inválido) has its OWN table vintage
+// within the same period — they are NOT the same.
+func cuadro4Table(cat mortalityCategory, mortSex string, d time.Time) string {
+	isHombre := mortSex == "H"
+
+	switch {
+	case d.Before(periodStart1):
+		// Pre 01-02-2005: RV-85 / B-85 / MI-85
+		return cuadro4Prefix(cat, isHombre, "1985")
+
+	case d.Before(periodStart2):
+		// 01-02-2005 to 31-01-2008: RV-2004 / B-85 / MI-85
+		if cat == catRV {
+			return prefixSex("RV", isHombre, "2004")
 		}
-		if !d.Before(cutoff2005) {
-			return 2009
+		return cuadro4Prefix(cat, isHombre, "1985")
+
+	case d.Before(periodStart3):
+		// 01-02-2008 to 30-06-2010: RV-2004 / B-2006 / MI-2006
+		if cat == catRV {
+			return prefixSex("RV", isHombre, "2004")
 		}
-		return 2004 // RV-85 fallback -> oldest RV table loaded
+		return cuadro4Prefix(cat, isHombre, "2006")
+
+	case d.Before(periodStart4):
+		// 01-07-2010 to 30-06-2016: RV-2009 / B-2006 / MI-2006
+		if cat == catRV {
+			return prefixSex("RV", isHombre, "2009")
+		}
+		return cuadro4Prefix(cat, isHombre, "2006")
+
+	case d.Before(periodStart5):
+		// 01-07-2016 to 30-06-2023: CB-2014/RV-2014 / CB-2014/B-2014 / MI-2014
+		return cuadro4Period5(cat, isHombre)
+
+	default:
+		// 01-07-2023+: CB-2020/RV-2020 / CB-2020/B-2020 / MI-2020
+		return cuadro4Period6(cat, isHombre)
 	}
 }
 
-// contemporaneaYear returns the vintage of the mortality table in force for new
-// business on date d.
-func contemporaneaYear(cat mortalityCategory, d time.Time) int {
-	if !d.Before(cutoff2023) {
-		return 2020
-	}
-	if !d.Before(cutoff2014) {
-		return 2014
-	}
-	if cat == catRV {
-		return 2009
-	}
-	return 2006
-}
-
-// tableName resolves the standard table name for a category/sex/vintage combo,
-// falling back to the closest available table when an exact vintage is absent.
-func tableName(cat mortalityCategory, mortSex string, year int) string {
+// cuadro4Prefix returns the table name for a given category, sex, and year.
+// For B and MI categories it's straightforward. For RV (afiliado) the naming
+// varies by era (men use CB in newer eras).
+//
+// Special case: MI-1985 (inválido pre-2005) does not exist — Circular 491
+// only defined B-85 and RV-85. Pre-2005 invalidez is valued with B-85 tables
+// (per Circular 491, no MI-85 was published).
+func cuadro4Prefix(cat mortalityCategory, isHombre bool, year string) string {
 	switch cat {
-	case catInvalidez:
-		return "MI-" + mortSex + "-" + itoa(clampYear(year, 2006, 2020))
-
 	case catRV:
-		// Male RV tables exist only for 2004/2009; newer eras use CB-H.
-		if mortSex == "H" {
-			if year <= 2009 {
-				return "RV-H-" + itoa(year)
-			}
-			return "CB-H-" + itoa(clampYear(year, 2014, 2020))
+		return rvTableFor(isHombre, year)
+	case catInvalidez:
+		if year == "1985" {
+			return bTableFor(isHombre, "1985")
 		}
-		return "RV-M-" + itoa(clampYear(year, 2004, 2020))
-
+		return prefixSex("MI", isHombre, year)
 	default: // catSobreviv
-		if mortSex == "H" {
-			if year == 2006 {
-				return "B-H-2006"
-			}
-			return "CB-H-" + itoa(clampYear(year, 2014, 2020))
+		return bTableFor(isHombre, year)
+	}
+}
+
+// rvTableFor resolves the afiliado (rentista) table name by sex and vintage.
+func rvTableFor(isHombre bool, year string) string {
+	switch year {
+	case "1985":
+		return prefixSex("RV", isHombre, "1985")
+	case "2004":
+		return prefixSex("RV", isHombre, "2004")
+	case "2009":
+		return prefixSex("RV", isHombre, "2009")
+	case "2014":
+		if isHombre {
+			return "CB-H-2014"
 		}
-		return "B-M-" + itoa(clampYear(year, 2006, 2020))
+		return "RV-M-2014"
+	case "2020":
+		if isHombre {
+			return "CB-H-2020"
+		}
+		return "RV-M-2020"
+	default:
+		return prefixSex("RV", isHombre, year)
 	}
 }
 
-func clampYear(year, lo, hi int) int {
-	if year < lo {
-		return lo
+// bTableFor resolves the beneficiario (sobreviviente) table name by sex and vintage.
+func bTableFor(isHombre bool, year string) string {
+	switch year {
+	case "1985":
+		return prefixSex("B", isHombre, "1985")
+	case "2006":
+		if isHombre {
+			return "B-H-2006"
+		}
+		return "B-M-2006"
+	case "2014":
+		if isHombre {
+			return "CB-H-2014"
+		}
+		return "B-M-2014"
+	case "2020":
+		if isHombre {
+			return "CB-H-2020"
+		}
+		return "B-M-2020"
+	default:
+		return prefixSex("B", isHombre, year)
 	}
-	if year > hi {
-		return hi
-	}
-	return year
 }
 
-func itoa(n int) string {
-	if n == 0 {
-		return "0"
+// cuadro4Period5 returns tables for 2016-07-01 to 2023-06-30.
+func cuadro4Period5(cat mortalityCategory, isHombre bool) string {
+	switch cat {
+	case catRV:
+		return rvTableFor(isHombre, "2014")
+	case catInvalidez:
+		return prefixSex("MI", isHombre, "2014")
+	default:
+		return bTableFor(isHombre, "2014")
 	}
-	s := ""
-	for n > 0 {
-		s = string(rune('0'+n%10)) + s
-		n /= 10
+}
+
+// cuadro4Period6 returns tables for 2023-07-01 onwards.
+func cuadro4Period6(cat mortalityCategory, isHombre bool) string {
+	switch cat {
+	case catRV:
+		return rvTableFor(isHombre, "2020")
+	case catInvalidez:
+		return prefixSex("MI", isHombre, "2020")
+	default:
+		return bTableFor(isHombre, "2020")
 	}
-	return s
+}
+
+func prefixSex(prefix string, isHombre bool, year string) string {
+	if isHombre {
+		return prefix + "-H-" + year
+	}
+	return prefix + "-M-" + year
 }
 
 // SelectBaseTable returns the mortality table anchored to a policy by its
-// contract date (the "tabla de bautizo" for the reserva base of the stale
-// regime). Members of the same policy share the stratum table; only sexo,
-// rol and invalidez status differ.
+// contract date, following Cuadro 4 of Nota Técnica N°9.
+// Members of the same policy may get DIFFERENT table vintages because
+// afiliado (RV), beneficiario (B), and inválido (MI) have independent vigencias.
 func SelectBaseTable(rol BeneficiarioRol, tipoTabla, sexo string, contractDate time.Time) string {
 	cat := tableCategory(rol, tipoTabla)
-	return tableName(cat, MapSexoToMortality(sexo), baseTableYear(cat, contractDate))
+	return cuadro4Table(cat, MapSexoToMortality(sexo), contractDate)
 }
 
 // SelectContemporaneaTable returns the mortality table in force for new
-// business on the given date. It is the reference table for the descalce.
+// business on the given date (latest period in Cuadro 4).
 func SelectContemporaneaTable(rol BeneficiarioRol, tipoTabla, sexo string, at time.Time) string {
 	cat := tableCategory(rol, tipoTabla)
-	return tableName(cat, MapSexoToMortality(sexo), contemporaneaYear(cat, at))
+	return cuadro4Table(cat, MapSexoToMortality(sexo), at)
 }

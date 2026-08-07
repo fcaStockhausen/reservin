@@ -23,8 +23,16 @@ func NewMortalityLoader(path string) *MortalityLoader {
 	return &MortalityLoader{path: path}
 }
 
-// Load reads every table in every sheet and returns normalized records.
-func (l *MortalityLoader) Load() ([]models.MortalityTable, error) {
+// MortalityLoadResult holds both the base mortality tables and the annual
+// improvement factors (AAx por año) parsed from the Excel file.
+type MortalityLoadResult struct {
+	Tables        []models.MortalityTable
+	Mejoramientos []models.FactorMejoramiento
+}
+
+// Load reads every table in every sheet and returns normalized records, plus
+// the annual improvement factors for the TM-2020 era tables.
+func (l *MortalityLoader) Load() (*MortalityLoadResult, error) {
 	f, err := excelize.OpenFile(l.path)
 	if err != nil {
 		return nil, fmt.Errorf("open mortality excel: %w", err)
@@ -32,6 +40,7 @@ func (l *MortalityLoader) Load() ([]models.MortalityTable, error) {
 	defer f.Close()
 
 	var records []models.MortalityTable
+	var mejoramientos []models.FactorMejoramiento
 	// Dedupe by (standard name, edad): some tables (e.g. CB-2020-HOMBRES) are
 	// published in both the Vejez and Sobrevivencia sheets with identical data.
 	seen := make(map[string]bool)
@@ -48,7 +57,7 @@ func (l *MortalityLoader) Load() ([]models.MortalityTable, error) {
 		// Find every column whose header cell (within the first 5 rows) is "Edad".
 		// Each such column marks the start of a mortality table group.
 		for _, hdr := range findEdadHeaders(rows) {
-			recs, err := l.parseTableGroup(rows, hdr, sheet)
+			recs, mej, err := l.parseTableGroup(rows, hdr, sheet)
 			if err != nil {
 				return nil, fmt.Errorf("sheet %s col %d: %w", sheet, hdr.col, err)
 			}
@@ -60,10 +69,14 @@ func (l *MortalityLoader) Load() ([]models.MortalityTable, error) {
 				seen[key] = true
 				records = append(records, rec)
 			}
+			mejoramientos = append(mejoramientos, mej...)
 		}
 	}
 
-	return records, nil
+	return &MortalityLoadResult{
+		Tables:        records,
+		Mejoramientos: mejoramientos,
+	}, nil
 }
 
 type tableHeader struct {
@@ -90,17 +103,37 @@ func findEdadHeaders(rows [][]string) []tableHeader {
 }
 
 // parseTableGroup reads the table whose "Edad" header is at (hdr.row, hdr.col).
-// Column layout: edad=col, qx=col+1, factor_aax=col+2 (optional).
-func (l *MortalityLoader) parseTableGroup(rows [][]string, hdr tableHeader, sheet string) ([]models.MortalityTable, error) {
+// Column layout: edad=col, qx=col+1, then annual improvement factors in the
+// row hdr.row+1 (years 2021-2036) across columns col+2, col+3, ...
+func (l *MortalityLoader) parseTableGroup(rows [][]string, hdr tableHeader, sheet string) ([]models.MortalityTable, []models.FactorMejoramiento, error) {
 	edadCol := hdr.col
 	qxCol := hdr.col + 1
-	aaxCol := hdr.col + 2
 
 	// Determine the table name from row 0 at the header column.
 	rawName := cellAt(rows, 0, edadCol)
 	meta := parseTableName(rawName, sheet)
 
+	// Detect annual improvement years in the row immediately below the header.
+	// e.g. hdr.row=1 -> improvement years row = 2.
+	yearRow := hdr.row + 1
+	var mejYears []int
+	var mejCols []int
+	if yearRow < len(rows) {
+		for c := hdr.col + 2; c < len(rows[yearRow]); c++ {
+			cell := strings.TrimSpace(rows[yearRow][c])
+			if cell == "" {
+				continue
+			}
+			cell = strings.TrimSuffix(cell, "*")
+			if y, err := strconv.Atoi(cell); err == nil && y >= 2000 && y <= 2100 {
+				mejYears = append(mejYears, y)
+				mejCols = append(mejCols, c)
+			}
+		}
+	}
+
 	var records []models.MortalityTable
+	var mejoramientos []models.FactorMejoramiento
 	for r := hdr.row + 1; r < len(rows); r++ {
 		edadStr := strings.TrimSpace(cellAt(rows, r, edadCol))
 		if edadStr == "" {
@@ -130,18 +163,29 @@ func (l *MortalityLoader) parseTableGroup(rows [][]string, hdr tableHeader, shee
 			ProbMuerte:     decimal.NewFromFloat(qx),
 			VigenciaInicio: time.Date(meta.year, 1, 1, 0, 0, 0, 0, time.UTC),
 		}
-
-		// Factor Aax is optional and only present in pre-2020 tables.
-		if aaxStr := strings.TrimSpace(cellAt(rows, r, aaxCol)); aaxStr != "" {
-			if aax, err := strconv.ParseFloat(aaxStr, 64); err == nil {
-				rec.FactorAax = decimal.NewFromFloat(aax)
-			}
-		}
-
 		records = append(records, rec)
+
+		// Extract annual improvement factors AAx for each improvement year.
+		for i, mejYear := range mejYears {
+			col := mejCols[i]
+			v := strings.TrimSpace(cellAt(rows, r, col))
+			if v == "" {
+				continue
+			}
+			aax, err := strconv.ParseFloat(v, 64)
+			if err != nil {
+				continue
+			}
+			mejoramientos = append(mejoramientos, models.FactorMejoramiento{
+				NombreEstandar: meta.standard,
+				Edad:           edad,
+				Año:            mejYear,
+				FactorAA:       decimal.NewFromFloat(aax),
+			})
+		}
 	}
 
-	return records, nil
+	return records, mejoramientos, nil
 }
 
 // cellAt safely retrieves a string cell from ragged rows.

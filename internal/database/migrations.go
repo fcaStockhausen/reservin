@@ -167,6 +167,23 @@ func NewMigrator(db *sql.DB) *Migrator {
 					);`,
 				},
 			},
+			{
+				Version:     4,
+				Description: "Add factor_mejoramiento table for mortality improvement factors (AAx por año)",
+				SQL: []string{
+					`-- Factores de mejoramiento anuales de mortalidad (Circular 2332, NT9 ec. 2).
+					-- Cada fila: factor AAx para una tabla/edad/año de mejora (año 2021 en adelante).
+					CREATE TABLE IF NOT EXISTS factor_mejoramiento (
+						id INTEGER PRIMARY KEY AUTOINCREMENT,
+						nombre_estandar VARCHAR(50) NOT NULL,
+						edad INTEGER NOT NULL,
+						año INTEGER NOT NULL, -- año de mejora (2021, 2022, ...)
+						factor_aa DECIMAL(10,8) NOT NULL, -- AAx,año
+						UNIQUE(nombre_estandar, edad, año)
+					);`,
+					`CREATE INDEX IF NOT EXISTS idx_factor_mej_nombre_edad ON factor_mejoramiento(nombre_estandar, edad);`,
+				},
+			},
 		},
 	}
 }

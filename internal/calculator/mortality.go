@@ -13,13 +13,85 @@ import (
 // edad → qx, and survival probabilities are computed on demand.
 type MortalityEngine struct {
 	tables map[string]map[int]decimal.Decimal // tableName -> edad -> qx
+	// mejoramiento: tableName -> edad -> año -> factor AAx (Circular 2332).
+	// When loaded, Qx/Tpx apply the improvement formula of Nota Técnica N°9:
+	//   qx,año = qx,2020 × Π_{t=2021}^{año} (1 - AAx,t)
+	mejoramiento map[string]map[int]map[int]decimal.Decimal
+	// añoCálculo is the valuation year used for improvement (default 2020 = no
+	// improvement). Set via SetAñoCálculo.
+	añoCálculo int
 }
 
 // NewMortalityEngine creates an empty engine.
 func NewMortalityEngine() *MortalityEngine {
 	return &MortalityEngine{
-		tables: make(map[string]map[int]decimal.Decimal),
+		tables:       make(map[string]map[int]decimal.Decimal),
+		mejoramiento: make(map[string]map[int]map[int]decimal.Decimal),
+		añoCálculo:   2020,
 	}
+}
+
+// SetAñoCálculo sets the valuation year for mortality improvement.
+func (me *MortalityEngine) SetAñoCálculo(año int) {
+	me.añoCálculo = año
+}
+
+// LoadMejoramiento loads the annual improvement factors for a table.
+func (me *MortalityEngine) LoadMejoramiento(repo *database.MortalityRepository, tableName string) error {
+	mejRepo := database.NewFactorMejoramientoRepository(repo.DB())
+	factors, err := mejRepo.GetFactors(tableName)
+	if err != nil {
+		return err
+	}
+	if len(factors) == 0 {
+		return nil
+	}
+	byAge := make(map[int]map[int]decimal.Decimal)
+	for _, f := range factors {
+		if byAge[f.Edad] == nil {
+			byAge[f.Edad] = make(map[int]decimal.Decimal)
+		}
+		byAge[f.Edad][f.Año] = f.FactorAA
+	}
+	me.mejoramiento[tableName] = byAge
+	return nil
+}
+
+// EnsureMejoramiento loads improvement factors if not already cached.
+func (me *MortalityEngine) EnsureMejoramiento(repo *database.MortalityRepository, tableName string) error {
+	if _, ok := me.mejoramiento[tableName]; ok {
+		return nil
+	}
+	return me.LoadMejoramiento(repo, tableName)
+}
+
+// mejoradaQx applies the mortality improvement factor for the valuation year.
+func (me *MortalityEngine) mejoradaQx(tableName string, edad, añoBase int) (decimal.Decimal, error) {
+	qx, err := me.Qx(tableName, edad)
+	if err != nil {
+		return decimal.Zero, err
+	}
+	if me.añoCálculo <= añoBase {
+		return qx, nil
+	}
+	byAge, ok := me.mejoramiento[tableName]
+	if !ok {
+		return qx, nil // no improvement data -> base qx
+	}
+	añoFactors, ok := byAge[edad]
+	if !ok {
+		return qx, nil
+	}
+	// qx,año = qx,2020 × Π_{t=añoBase+1}^{añoCálculo} (1 - AAx,t)
+	result := qx
+	for t := añoBase + 1; t <= me.añoCálculo; t++ {
+		aax, ok := añoFactors[t]
+		if !ok {
+			break // no factor for this year -> stop improving
+		}
+		result = result.Mul(decimal.NewFromInt(1).Sub(aax))
+	}
+	return result, nil
 }
 
 // LoadTable fetches a mortality table from the database and caches it.
@@ -49,6 +121,10 @@ func (me *MortalityEngine) EnsureLoaded(repo *database.MortalityRepository, tabl
 }
 
 // Qx returns the probability of death at a given age for a table.
+//
+// A missing table is a hard error (caller must propagate). An age beyond the
+// table's max is treated as certain death (qx=1), consistent with Tpx: this is
+// the standard actuarial convention at the closing age of a life table.
 func (me *MortalityEngine) Qx(tableName string, edad int) (decimal.Decimal, error) {
 	t, ok := me.tables[tableName]
 	if !ok {
@@ -56,7 +132,7 @@ func (me *MortalityEngine) Qx(tableName string, edad int) (decimal.Decimal, erro
 	}
 	qx, ok := t[edad]
 	if !ok {
-		return decimal.Zero, fmt.Errorf("age %d not in table %s", edad, tableName)
+		return decimal.NewFromInt(1), nil // past closing age: certain death
 	}
 	return qx, nil
 }

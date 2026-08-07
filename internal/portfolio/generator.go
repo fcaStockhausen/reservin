@@ -59,6 +59,7 @@ var archetypes = []FamilyArchetype{
 	{"invalido", 8, "Pensionado por invalidez con familia", genInvalido},
 	{"familia_extensa", 4, "Familia con conyuge + 3+ hijos + madre no matrimonial", genFamiliaExtensa},
 	{"conviviente_civil", 3, "Pareja con acuerdo de union civil", genConvivienteCivil},
+	{"stock_pre2005", 5, "Poliza historica pre-2005 (estrato RV-85/B-85)", genStockPre2005},
 }
 
 var rnd = rand.New(rand.NewSource(time.Now().UnixNano()))
@@ -95,7 +96,7 @@ func Generate(n int) []PolicyResult {
 
 		pdef, mdefs := archetype.Generate(rnd)
 		policy := buildPolicy(i, pdef)
-		members := buildMembers(policy.ID, mdefs)
+		members := buildMembers(policy.ID, mdefs, policy.FechaInicio)
 		grupo := buildGrupo(members)
 
 		results = append(results, PolicyResult{
@@ -132,9 +133,8 @@ func buildPolicy(idx int, pdef policyDef) models.Policy {
 	}
 }
 
-func buildMembers(polizaID int, mdefs []memberDef) []models.Beneficiario {
+func buildMembers(polizaID int, mdefs []memberDef, fechaContratacion time.Time) []models.Beneficiario {
 	members := make([]models.Beneficiario, 0, len(mdefs))
-	methodology := models.MethodologyIFRS
 
 	for _, md := range mdefs {
 		b := models.Beneficiario{
@@ -166,7 +166,7 @@ func buildMembers(polizaID int, mdefs []memberDef) []models.Beneficiario {
 			tipoTabla = string(models.TableTypeVejez)
 		}
 		b.TablaAsignada = models.SelectTableForBeneficiario(
-			b.Rol, b.Sexo, b.TipoBeneficiarioC1194, methodology, tipoTabla,
+			b.Rol, b.Sexo, b.TipoBeneficiarioC1194, fechaContratacion, tipoTabla,
 		)
 
 		members = append(members, b)
@@ -514,6 +514,48 @@ func genConvivienteCivil(rnd *rand.Rand) (policyDef, []memberDef) {
 		{Rol: models.RolConviviente, Sexo: models.SexoFemenino, Edad: edadCC,
 			TipoC1194: models.C1194CCsinHijos, MatrimonioAnios: 3 + rnd.Intn(5),
 			PctRenta: 0.60},
+	}
+	return pdef, members
+}
+
+// genStockPre2005 generates a historical policy contracted before the 2005
+// table change (RV-85/B-85 stratum). This exercises the legacy stratification
+// in the batch engine, which otherwise only produces 2012+ synthetic policies.
+func genStockPre2005(rnd *rand.Rand) (policyDef, []memberDef) {
+	edadCausante := 60 + rnd.Intn(10) // 60-69 at contract
+	edadConyuge := edadCausante - 5 + rnd.Intn(8)
+	if edadConyuge < 40 {
+		edadConyuge = 40
+	}
+
+	// Contract between 1995 and 2004 so the policy falls in the pre-2005
+	// stratum (base RV-1985 / B-1985).
+	fechaInicio := randomDate(rnd, 1995, 2004)
+
+	pdef := policyDef{
+		NumeroPoliza:    "RV-85",
+		TipoRenta:       "VITALICIA",
+		SexoCausante:    models.SexoMasculino,
+		EdadCausante:    edadCausante,
+		TipoPension:     models.TipoPensionRVVejezJubilacion,
+		ModalidadRenta:  pickModalidad(rnd),
+		VigenciaPension: models.VigenciaEnPago,
+		CapitalUF:       2000 + rnd.Float64()*6000,
+		TasaTM:          0.036 + rnd.Float64()*0.008,
+		TasaTC:          0.033 + rnd.Float64()*0.008,
+		FechaInicio:     fechaInicio,
+	}
+
+	members := []memberDef{
+		{Rol: models.RolCausante, Sexo: models.SexoMasculino, Edad: edadCausante,
+			TipoC1194: models.C1194Afiliado, PctRenta: 1.0},
+	}
+	if rnd.Float64() < 0.7 {
+		members = append(members, memberDef{
+			Rol: models.RolConyuge, Sexo: models.SexoFemenino, Edad: edadConyuge,
+			TipoC1194: models.C1194ConyugeSinHijos, MatrimonioAnios: 15 + rnd.Intn(25),
+			HijosComunes: 0, PctRenta: 0.60,
+		})
 	}
 	return pdef, members
 }

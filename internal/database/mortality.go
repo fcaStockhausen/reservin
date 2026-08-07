@@ -12,7 +12,11 @@ type MortalityRepository struct {
 	db *sql.DB
 }
 
-// NewMortalityRepository creates a new mortality repository
+// DB exposes the underlying SQL handle (e.g. for the improvement factor repo).
+func (r *MortalityRepository) DB() *sql.DB {
+	return r.db
+}
+
 func NewMortalityRepository(db *sql.DB) *MortalityRepository {
 	return &MortalityRepository{db: db}
 }
@@ -70,7 +74,7 @@ func (r *MortalityRepository) BatchInsert(tables []models.MortalityTable) error 
 
 	// Prepare insert statement
 	sql := `
-	INSERT INTO tabla_mortalidad (
+	INSERT OR REPLACE INTO tabla_mortalidad (
 		nombre_estandar, nombre_original, sexo, tipo_tabla, año_tabla,
 		edad, prob_muerte, factor_aax, vigencia_inicio, vigencia_fin
 	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`

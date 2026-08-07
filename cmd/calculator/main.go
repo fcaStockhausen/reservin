@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"runtime"
+	"strings"
 	"time"
 
 	"github.com/shopspring/decimal"
@@ -41,6 +42,12 @@ func main() {
 	scenarioAllFlag := flag.Bool("scenario-all", false, "Run all builtin scenarios and compare")
 	genRisFlag := flag.String("gen-ris", "", "Generate RIS file for policy ID")
 	stressFlag := flag.String("stress", "", "Stress test: generate N policies and calculate (e.g. 1000)")
+	validateRISFlag := flag.String("validate-ris", "", "Validate calculator against RIS file (path to .vta)")
+	sampleFlag := flag.Int("sample", 10000, "Sample size for RIS validation")
+	retenidaFlag := flag.Bool("retenida", false, "RIS validation: compare against retained (post-reinsurance) reserves")
+	vtdSensFlag := flag.Bool("vtd-sens", false, "Measure VTD sensitivity: reserve under every available VTD curve")
+	noMejoramientoFlag := flag.Bool("no-mejoramiento", false, "Disable mortality improvement (Circular 2332) for sensitivity analysis")
+	debugSVSFlag := flag.String("debug-svs", "", "RIS validation: dump full per-person breakdown for a single policy (SVS number)")
 
 	flag.Parse()
 
@@ -96,6 +103,12 @@ func main() {
 		handleGenRIS(db, *genRisFlag)
 	case *stressFlag != "":
 		handleStress(db, *stressFlag)
+	case *validateRISFlag != "":
+		if *vtdSensFlag {
+			vtdSensitivity(db, *validateRISFlag, *sampleFlag)
+		} else {
+			validateRIS(db, *validateRISFlag, *sampleFlag, *retenidaFlag, !*noMejoramientoFlag, *debugSVSFlag)
+		}
 	default:
 		fmt.Println("Use -help for available commands")
 		fmt.Println("Available options:")
@@ -160,10 +173,12 @@ func handleImport(db *database.DB, cfg config.Config, importType string) {
 	switch importType {
 	case "mortality":
 		handleImportMortality(db, cfg)
+	case "circular491":
+		handleImportCircular491(db, cfg)
 	case "vtd":
 		handleImportVTD(db, cfg)
 	default:
-		log.Fatalf("Unknown import type: %s. Use 'mortality' or 'vtd'", importType)
+		log.Fatalf("Unknown import type: %s. Use 'mortality', 'circular491' or 'vtd'", importType)
 	}
 }
 
@@ -172,18 +187,30 @@ func handleImportMortality(db *database.DB, cfg config.Config) {
 	fmt.Printf("Importing mortality tables from %s...\n", path)
 
 	ld := loader.NewMortalityLoader(path)
-	records, err := ld.Load()
+	result, err := ld.Load()
 	if err != nil {
 		log.Fatalf("Failed to parse mortality Excel: %v", err)
 	}
-	fmt.Printf("Parsed %d mortality records from Excel\n", len(records))
+	fmt.Printf("Parsed %d mortality records from Excel\n", len(result.Tables))
 
 	repo := database.NewMortalityRepository(db.DB)
-	if err := repo.BatchInsert(records); err != nil {
+	if err := repo.BatchInsert(result.Tables); err != nil {
 		log.Fatalf("Failed to insert mortality records: %v", err)
 	}
 
-	fmt.Printf("Successfully imported %d mortality records\n", len(records))
+	fmt.Printf("Successfully imported %d mortality records\n", len(result.Tables))
+
+	// Import annual improvement factors (AAx por año, Circular 2332).
+	if len(result.Mejoramientos) > 0 {
+		mejRepo := database.NewFactorMejoramientoRepository(db.DB)
+		if err := mejRepo.CreateTable(); err != nil {
+			log.Fatalf("Failed to create factor_mejoramiento table: %v", err)
+		}
+		if err := mejRepo.BatchInsert(result.Mejoramientos); err != nil {
+			log.Fatalf("Failed to insert improvement factors: %v", err)
+		}
+		fmt.Printf("Imported %d improvement factors (AAx por año)\n", len(result.Mejoramientos))
+	}
 
 	// Show statistics after import
 	stats, err := repo.GetStatistics()
@@ -197,8 +224,42 @@ func handleImportMortality(db *database.DB, cfg config.Config) {
 	}
 }
 
+func handleImportCircular491(db *database.DB, cfg config.Config) {
+	path := cfg.Data.Circular491.Path
+	fmt.Printf("Importing Circular 491 (1985) mortality tables from %s...\n", path)
+
+	ld := loader.NewCircular491Loader(path)
+	records, err := ld.Load()
+	if err != nil {
+		log.Fatalf("Failed to parse Circular 491 Excel: %v", err)
+	}
+	fmt.Printf("Parsed %d mortality records from Excel\n", len(records))
+
+	repo := database.NewMortalityRepository(db.DB)
+	if err := repo.BatchInsert(records); err != nil {
+		log.Fatalf("Failed to insert mortality records: %v", err)
+	}
+
+	fmt.Printf("Successfully imported %d Circular 491 mortality records\n", len(records))
+
+	// Show the loaded 1985 tables (distinct names).
+	tables, err := repo.GetAllTables()
+	if err != nil {
+		log.Printf("Warning: Failed to list tables: %v", err)
+		return
+	}
+	for _, name := range tables {
+		if strings.Contains(name, "1985") {
+			fmt.Printf("  %s\n", name)
+		}
+	}
+}
+
 func handleImportVTD(db *database.DB, cfg config.Config) {
-	path := cfg.Data.VTDData.Path
+	path := cfg.Data.VTDHistorico.Path
+	if path == "" {
+		path = cfg.Data.VTDData.Path
+	}
 	fmt.Printf("Importing VTD vectors from %s...\n", path)
 
 	ld := loader.NewVTDLoader(path)
@@ -329,7 +390,6 @@ func handleSeedDemo(db *database.DB) {
 	}
 	fmt.Printf("Created policy DEMO-001 (ID: %d)\n", polizaID)
 
-	methodology := policy.GetMethodology()
 	members := []models.Beneficiario{
 		{
 			PolizaID:              polizaID,
@@ -377,7 +437,7 @@ func handleSeedDemo(db *database.DB) {
 			tipoTabla = string(models.TableTypeVejez)
 		}
 		members[i].TablaAsignada = models.SelectTableForBeneficiario(
-			members[i].Rol, members[i].Sexo, members[i].TipoBeneficiarioC1194, methodology, tipoTabla,
+			members[i].Rol, members[i].Sexo, members[i].TipoBeneficiarioC1194, policy.FechaInicio, tipoTabla,
 		)
 	}
 
@@ -492,7 +552,8 @@ func handleCalc(db *database.DB, polizaIDStr string, mode string) {
 	}
 
 	mortRepo := database.NewMortalityRepository(db.DB)
-	calc := calculator.NewReserveCalculator(mortRepo)
+	calc := calculator.NewReserveCalculator(mortRepo, database.NewVTDRepository(db.DB))
+	_ = calc.LoadVTD()
 
 	// Step 1: Project with unitary rent (R=1) to compute the annuity factor.
 	// This gives us the factor by which we divide the capital to get the annual pension.
@@ -717,7 +778,8 @@ func handleGenRIS(db *database.DB, polizaIDStr string) {
 	}
 
 	mortRepo := database.NewMortalityRepository(db.DB)
-	calc := calculator.NewReserveCalculator(mortRepo)
+	calc := calculator.NewReserveCalculator(mortRepo, database.NewVTDRepository(db.DB))
+	_ = calc.LoadVTD()
 
 	grupo, _ := benRepo.GetGrupoFamiliar(polizaID)
 	rentaAnual := decimal.NewFromFloat(1)

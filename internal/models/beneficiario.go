@@ -125,55 +125,20 @@ func (gf *GrupoFamiliar) HasHijosConDerecho() bool {
 	return false
 }
 
-// SelectTableForBeneficiario determines the CMF mortality table for a family member.
+// SelectTableForBeneficiario determines the CMF mortality table for a family member
+// anchored to the policy's contract date (the "tabla de bautizo"). It delegates
+// to SelectBaseTable, which applies the Circular N°2332 stratification (pre-2005
+// → RV-85/B-85, 2005-2011 → RV-2009/B-2006, post-2012 → TM-2020).
 // sexo is in C1194 format: M (masculino) or F (femenino).
 // tipoC1194 is the C1194 beneficiary type code (10/11/20/21/30/35/41/42/50/51/52/77/99).
 func SelectTableForBeneficiario(
 	rol BeneficiarioRol,
 	sexo string,
 	tipoC1194 string,
-	methodology PolicyMethodology,
+	fechaContratacion time.Time,
 	tipoTabla string,
 ) string {
-	mortSex := MapSexoToMortality(sexo)
-
-	if methodology == MethodologyTraditional {
-		return selectLegacyTable(rol, mortSex, tipoTabla)
-	}
-
-	switch {
-	case tipoTabla == string(TableTypeInvalidez):
-		if mortSex == "M" {
-			return "MI-M-2020"
-		}
-		return "MI-H-2020"
-
-	case rol == RolCausante && mortSex == "M":
-		return "RV-M-2020"
-
-	// Sobrevivientes mujeres usan B-M-2020 (no RV, que es para rentistas)
-	case mortSex == "M" && rol != RolCausante:
-		return "B-M-2020"
-
-	default:
-		return "CB-H-2020"
-	}
-}
-
-// selectLegacyTable resolves mortality tables for pre-2012 (traditional)
-// policies.
-func selectLegacyTable(rol BeneficiarioRol, mortSex string, tipoTabla string) string {
-	switch {
-	case tipoTabla == string(TableTypeInvalidez):
-		if mortSex == "M" {
-			return "MI-M-2006"
-		}
-		return "MI-H-2006"
-	case mortSex == "M":
-		return "B-M-2006"
-	default:
-		return "B-H-2006"
-	}
+	return SelectBaseTable(rol, tipoTabla, sexo, fechaContratacion)
 }
 
 // CalcularPorcentajeSobrevivencia computes the legal survivor pension percentage

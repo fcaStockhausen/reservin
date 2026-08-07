@@ -5,17 +5,18 @@ package scenario
 
 // BuiltinScenarios returns predefined family type YAML strings.
 var BuiltinScenarios = map[string]string{
-	"familia_tradicional":  familiaTradicional,
-	"familia_vieja":        familiaVieja,
-	"viejo_caliente":       viejoCaliente,
-	"viejo_caliente_ext":   viejoCalienteExtendido,
-	"invalido_joven":       invalidoJoven,
-	"invalido_parcial":     invalidoParcial,
-	"vejez_anticipada":     vejezAnticipada,
-	"sobrevivencia_pura":   sobrevivenciaPura,
-	"mujer_causante":       mujerCausante,
-	"descalce_2009":        descalce2009,
-	"descalce_tm2020":      descalceTM2020,
+	"familia_tradicional": familiaTradicional,
+	"familia_vieja":       familiaVieja,
+	"viejo_caliente":      viejoCaliente,
+	"viejo_caliente_ext":  viejoCalienteExtendido,
+	"invalido_joven":      invalidoJoven,
+	"invalido_parcial":    invalidoParcial,
+	"vejez_anticipada":    vejezAnticipada,
+	"sobrevivencia_pura":  sobrevivenciaPura,
+	"mujer_causante":      mujerCausante,
+	"descalce_2009":       descalce2009,
+	"descalce_tm2020":     descalceTM2020,
+	"descalce_1985":       descalce1985,
 }
 
 const familiaTradicional = `
@@ -477,4 +478,41 @@ events:
     type: KILL_MEMBER
     target_rol: CAUSANTE
     target_sexo: F
+`
+
+const descalce1985 = `
+name: descalce_1985
+description: Poliza 2000 (estrato pre-2005, base RV-1985/B-1985) con descalce vs TM-2020
+horizon: 50
+
+policy:
+  capital_uf: 5000.0
+  fecha_contratacion: "2000-01-15"
+  tasa_tm: 0.038
+  tasa_tc: 0.035
+  tipo_pension: "04"
+  modalidad_renta: "1000"
+  gradualidad_anios: 10
+
+causante:
+  rol: CAUSANTE
+  sexo: M
+  edad: 60
+  fecha_nacimiento: "1940-01-15"
+  tipo_c1194: "99"
+
+grupo_familiar:
+  - rol: CONYUGE
+    sexo: F
+    edad: 55
+    fecha_nacimiento: "1945-03-10"
+    tipo_c1194: "10"
+    matrimonio_anios: 35
+    hijos_comunes: 0
+
+events:
+  - year: 30
+    type: KILL_MEMBER
+    target_rol: CAUSANTE
+    target_sexo: M
 `

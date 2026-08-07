@@ -10,21 +10,21 @@ import (
 type TipoClausula string
 
 const (
-	ClausulaSinAdicionales       TipoClausula = "SIN_ADICIONALES"
-	ClausulaAumentoTemporal      TipoClausula = "AUMENTO_TEMPORAL"
-	ClausulaPeriodoGarantizado   TipoClausula = "PERIODO_GARANTIZADO"
-	ClausulaAumentoPctSobrev     TipoClausula = "AUMENTO_PCT_SOBREVIVENCIA"
-	ClausulaAumentoDiferido      TipoClausula = "AUMENTO_DIFERIDO_VITALICIO"
+	ClausulaSinAdicionales     TipoClausula = "SIN_ADICIONALES"
+	ClausulaAumentoTemporal    TipoClausula = "AUMENTO_TEMPORAL"
+	ClausulaPeriodoGarantizado TipoClausula = "PERIODO_GARANTIZADO"
+	ClausulaAumentoPctSobrev   TipoClausula = "AUMENTO_PCT_SOBREVIVENCIA"
+	ClausulaAumentoDiferido    TipoClausula = "AUMENTO_DIFERIDO_VITALICIO"
 )
 
 // Clausula represents an additional clause on a policy (CAD polizas).
 type Clausula struct {
-	ID                int       `json:"id" db:"id"`
-	PolizaID          int       `json:"poliza_id" db:"poliza_id"`
-	Tipo              TipoClausula `json:"tipo" db:"tipo"`
-	Parametros        string    `json:"parametros,omitempty" db:"parametros"` // JSON
-	ModalidadRentaC1194 string  `json:"modalidad_renta_c1194" db:"modalidad_renta_c1194"`
-	CreatedAt         time.Time `json:"created_at" db:"created_at"`
+	ID                  int          `json:"id" db:"id"`
+	PolizaID            int          `json:"poliza_id" db:"poliza_id"`
+	Tipo                TipoClausula `json:"tipo" db:"tipo"`
+	Parametros          string       `json:"parametros,omitempty" db:"parametros"` // JSON
+	ModalidadRentaC1194 string       `json:"modalidad_renta_c1194" db:"modalidad_renta_c1194"`
+	CreatedAt           time.Time    `json:"created_at" db:"created_at"`
 }
 
 // ModalidadRenta encodes the C1194 campo 2.18 MODALIDAD-RENTA value.
@@ -86,23 +86,42 @@ func ParseModalidadRenta(codigo string) (tipo TipoClausula, mesesGarantizados in
 	}
 }
 
+// GarantizedMonths returns the months of guaranteed payments encoded in a
+// C1194 MODALIDAD-RENTA code. Only modalidades 3xxx (solo período garantizado)
+// and 4xxx (aumento de % de sobrevivencia con PG opcional) carry a guaranteed
+// period. Returns 0 for modalidades without one.
+func GarantizedMonths(codigo string) int {
+	if len(codigo) != 4 {
+		return 0
+	}
+	prefix := codigo[0]
+	if prefix != '3' && prefix != '4' {
+		return 0
+	}
+	meses, err := strconv.Atoi(codigo[1:])
+	if err != nil {
+		return 0
+	}
+	return meses
+}
+
 // TipoPensionC1194 codes from Anexo Tecnico campo 2.6.
 const (
-	TipoPensionSobrev528              = "01"
-	TipoPensionInv528                 = "02"
-	TipoPensionSobrevInv528           = "03"
-	TipoPensionRVVejezJubilacion      = "04"
-	TipoPensionRVVejezAnticipada      = "05"
-	TipoPensionRVInvTotal             = "06"
-	TipoPensionRVInvParcial           = "07"
-	TipoPensionRVSobrevivencia        = "08"
-	TipoPensionSobrevRVVejezJubilac   = "09"
-	TipoPensionSobrevRVVejezAnticip   = "10"
-	TipoPensionSobrevRVInvTotal       = "11"
-	TipoPensionSobrevRVInvParcial     = "12"
-	TipoPensionSobrevTraspasoCartera  = "13"
-	TipoPensionInvTraspasoCartera     = "14"
-	TipoPensionSobrevInvTraspaso      = "15"
+	TipoPensionSobrev528             = "01"
+	TipoPensionInv528                = "02"
+	TipoPensionSobrevInv528          = "03"
+	TipoPensionRVVejezJubilacion     = "04"
+	TipoPensionRVVejezAnticipada     = "05"
+	TipoPensionRVInvTotal            = "06"
+	TipoPensionRVInvParcial          = "07"
+	TipoPensionRVSobrevivencia       = "08"
+	TipoPensionSobrevRVVejezJubilac  = "09"
+	TipoPensionSobrevRVVejezAnticip  = "10"
+	TipoPensionSobrevRVInvTotal      = "11"
+	TipoPensionSobrevRVInvParcial    = "12"
+	TipoPensionSobrevTraspasoCartera = "13"
+	TipoPensionInvTraspasoCartera    = "14"
+	TipoPensionSobrevInvTraspaso     = "15"
 )
 
 // VigenciaPensionC1194 codes from Anexo Tecnico campo 2.8.

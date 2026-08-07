@@ -1,0 +1,35 @@
+# macOS
+.DS_Store
+
+# Go binaries and profiling artifacts
+/reservas
+/reservas.exe
+*.prof
+prof
+prof/
+cmd/prof/
+
+# Go test/build cache
+*.test
+
+# Local scratch / simulation outputs
+*.xlsx
+!docs/normativo/*.xlsx
+!data/vtd/*.xlsx
+R*.txt
+flujos_*.xlsx
+simulacion_*.xlsx
+comparativo_*.xlsx
+
+# Large data files (raw sources, kept out of the repo)
+data/*.zip
+data/*.vta
+/tmp/
+
+# Empty scaffolding dirs
+test/
+
+# Editor
+.vscode/
+.idea/
+*.swp

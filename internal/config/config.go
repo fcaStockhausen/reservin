@@ -12,11 +12,11 @@ import (
 
 // Config represents application configuration
 type Config struct {
-	Database database.Config `json:"database"`
-	Server  ServerConfig      `json:"server"`
-	Logging LoggingConfig     `json:"logging"`
+	Database    database.Config   `json:"database"`
+	Server      ServerConfig      `json:"server"`
+	Logging     LoggingConfig     `json:"logging"`
 	Calculation CalculationConfig `json:"calculation"`
-	Data    DataConfig        `json:"data"`
+	Data        DataConfig        `json:"data"`
 }
 
 // ServerConfig represents HTTP server configuration
@@ -31,12 +31,12 @@ type ServerConfig struct {
 // LoggingConfig represents logging configuration
 type LoggingConfig struct {
 	Level      string `json:"level"`
-	Format     string `json:"format"`     // json, text
-	Output     string `json:"output"`     // stdout, stderr, file
+	Format     string `json:"format"` // json, text
+	Output     string `json:"output"` // stdout, stderr, file
 	Filename   string `json:"filename"`
-	MaxSize    int    `json:"max_size"`    // MB
+	MaxSize    int    `json:"max_size"` // MB
 	MaxBackups int    `json:"max_backups"`
-	MaxAge     int    `json:"max_age"`     // days
+	MaxAge     int    `json:"max_age"` // days
 }
 
 // CalculationConfig represents calculation engine configuration
@@ -52,10 +52,12 @@ type CalculationConfig struct {
 // DataConfig represents data source configuration
 type DataConfig struct {
 	MortalityTables DataConfigSource `json:"mortality_tables"`
-	VTDData        DataConfigSource `json:"vtd_data"`
-	TMRates        DataConfigSource `json:"tm_rates"`
-	PolicyData     DataConfigSource `json:"policy_data"`
-	BackupPath     string           `json:"backup_path"`
+	Circular491     DataConfigSource `json:"circular_491"`  // 1985 legacy tables (RV-85/B-85)
+	VTDData         DataConfigSource `json:"vtd_data"`      // current VTD year
+	VTDHistorico    DataConfigSource `json:"vtd_historico"` // historical VTD curves (2020+)
+	TMRates         DataConfigSource `json:"tm_rates"`
+	PolicyData      DataConfigSource `json:"policy_data"`
+	BackupPath      string           `json:"backup_path"`
 }
 
 // DataConfigSource represents a data source configuration
@@ -101,8 +103,20 @@ func DefaultConfig() Config {
 				Encoding: "utf-8",
 				Enabled:  true,
 			},
+			Circular491: DataConfigSource{
+				Path:     "./docs/normativo/Tablas_Mortalidad_Circular_491_extr_1.xlsx",
+				Format:   "xlsx",
+				Encoding: "utf-8",
+				Enabled:  true,
+			},
 			VTDData: DataConfigSource{
 				Path:     "./data/normativo/VTD_2025_.xlsx",
+				Format:   "xlsx",
+				Encoding: "utf-8",
+				Enabled:  true,
+			},
+			VTDHistorico: DataConfigSource{
+				Path:     "./data/vtd/articles-51926_recurso_1.xlsx",
 				Format:   "xlsx",
 				Encoding: "utf-8",
 				Enabled:  true,

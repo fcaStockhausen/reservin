@@ -8,38 +8,38 @@ import (
 
 // Policy represents an insurance policy for rentas vitalicias
 type Policy struct {
-	ID               int              `json:"id" db:"id"`
-	NumeroPoliza     string           `json:"numero_poliza" db:"numero_poliza"`
-	TipoRenta        string           `json:"tipo_renta" db:"tipo_renta"`
-	FechaInicio      time.Time        `json:"fecha_inicio" db:"fecha_inicio"`
-	FechaFin         *time.Time       `json:"fecha_fin,omitempty" db:"fecha_fin"`
-	EdadContratante  int              `json:"edad_contratante" db:"edad_contratante"`
-	SexoBeneficiario string           `json:"sexo_beneficiario" db:"sexo_beneficiario"` // C1194: M, F
-	CapitalAsegurado decimal.Decimal   `json:"capital_asegurado" db:"capital_asegurado"`
-	FormaPago        string           `json:"forma_pago" db:"forma_pago"`
-	TasaDescuento    decimal.Decimal   `json:"tasa_descuento" db:"tasa_descuento"`
-	TasaTM           decimal.Decimal   `json:"tasa_tm" db:"tasa_tm"`
-	TasaTC           decimal.Decimal   `json:"tasa_tc" db:"tasa_tc"`
-	Estado           string           `json:"estado" db:"estado"`
-	TipoTabla        string           `json:"tipo_tabla" db:"tipo_tabla"`
+	ID               int             `json:"id" db:"id"`
+	NumeroPoliza     string          `json:"numero_poliza" db:"numero_poliza"`
+	TipoRenta        string          `json:"tipo_renta" db:"tipo_renta"`
+	FechaInicio      time.Time       `json:"fecha_inicio" db:"fecha_inicio"`
+	FechaFin         *time.Time      `json:"fecha_fin,omitempty" db:"fecha_fin"`
+	EdadContratante  int             `json:"edad_contratante" db:"edad_contratante"`
+	SexoBeneficiario string          `json:"sexo_beneficiario" db:"sexo_beneficiario"` // C1194: M, F
+	CapitalAsegurado decimal.Decimal `json:"capital_asegurado" db:"capital_asegurado"`
+	FormaPago        string          `json:"forma_pago" db:"forma_pago"`
+	TasaDescuento    decimal.Decimal `json:"tasa_descuento" db:"tasa_descuento"`
+	TasaTM           decimal.Decimal `json:"tasa_tm" db:"tasa_tm"`
+	TasaTC           decimal.Decimal `json:"tasa_tc" db:"tasa_tc"`
+	Estado           string          `json:"estado" db:"estado"`
+	TipoTabla        string          `json:"tipo_tabla" db:"tipo_tabla"`
 
 	// RIS C1194 fields (Registro 2)
-	TipoPension      string           `json:"tipo_pension,omitempty" db:"tipo_pension"`       // 01-15 (C1194 campo 2.6)
-	ModalidadRenta   string           `json:"modalidad_renta,omitempty" db:"modalidad_renta"` // 1000/2xxx/3xxx/4xxx (C1194 campo 2.18)
-	VigenciaPension  string           `json:"vigencia_pension,omitempty" db:"vigencia_pension"` // 6/7/8/9 (C1194 campo 2.8)
-	PeriodoAumento   int              `json:"periodo_aumento,omitempty" db:"periodo_aumento"`   // meses aumento temporal (C1194 campo 2.20)
+	TipoPension       string          `json:"tipo_pension,omitempty" db:"tipo_pension"`             // 01-15 (C1194 campo 2.6)
+	ModalidadRenta    string          `json:"modalidad_renta,omitempty" db:"modalidad_renta"`       // 1000/2xxx/3xxx/4xxx (C1194 campo 2.18)
+	VigenciaPension   string          `json:"vigencia_pension,omitempty" db:"vigencia_pension"`     // 6/7/8/9 (C1194 campo 2.8)
+	PeriodoAumento    int             `json:"periodo_aumento,omitempty" db:"periodo_aumento"`       // meses aumento temporal (C1194 campo 2.20)
 	PorcentajeAumento decimal.Decimal `json:"porcentaje_aumento,omitempty" db:"porcentaje_aumento"` // % aumento (C1194 campo 2.21)
 
-	CreatedAt        time.Time        `json:"created_at" db:"created_at"`
+	CreatedAt time.Time `json:"created_at" db:"created_at"`
 }
 
 // PolicyMethodology represents the calculation methodology based on policy date
 type PolicyMethodology string
 
 const (
-	MethodologyIFRS        PolicyMethodology = "IFRS"         // Post-January 1, 2012
-	MethodologyTraditional PolicyMethodology = "TRADICIONAL"   // Pre-January 1, 2012
-	MethodologyTransitional PolicyMethodology = "TRANSITIONAL"  // 2015-2020 period
+	MethodologyIFRS         PolicyMethodology = "IFRS"         // Post-January 1, 2012
+	MethodologyTraditional  PolicyMethodology = "TRADICIONAL"  // Pre-January 1, 2012
+	MethodologyTransitional PolicyMethodology = "TRANSITIONAL" // 2015-2020 period
 )
 
 // GetMethodology determines the appropriate calculation methodology based on policy date
@@ -59,8 +59,16 @@ func (p *Policy) GetMethodology() PolicyMethodology {
 	return MethodologyTraditional
 }
 
-// GetEffectiveDiscountRate returns the effective discount rate (min(TM, TC))
+// GetEffectiveDiscountRate returns the effective discount rate (min(TM, TC)).
+// A zero TM/TC (e.g. pólizas que no reportan la tasa de costo de emisión) falls
+// back to the other non-zero rate so the discount never collapses to 0.
 func (p *Policy) GetEffectiveDiscountRate() decimal.Decimal {
+	if p.TasaTM.IsZero() && !p.TasaTC.IsZero() {
+		return p.TasaTC
+	}
+	if p.TasaTC.IsZero() && !p.TasaTM.IsZero() {
+		return p.TasaTM
+	}
 	return decimal.Min(p.TasaTM, p.TasaTC)
 }
 
@@ -90,17 +98,17 @@ type PolicyType string
 
 const (
 	PolicyTypeVitalicia PolicyType = "VITALICIA"
-	PolicyTypeTemporal   PolicyType = "TEMPORARIA"
-	PolicyTypeDiferida   PolicyType = "DIFERIDA"
+	PolicyTypeTemporal  PolicyType = "TEMPORARIA"
+	PolicyTypeDiferida  PolicyType = "DIFERIDA"
 )
 
 // PaymentFrequency represents a payment frequency
 type PaymentFrequency string
 
 const (
-	PaymentFrequencyMensual   PaymentFrequency = "MENSUAL"
+	PaymentFrequencyMensual    PaymentFrequency = "MENSUAL"
 	PaymentFrequencyTrimestral PaymentFrequency = "TRIMESTRAL"
-	PaymentFrequencyAnual     PaymentFrequency = "ANUAL"
+	PaymentFrequencyAnual      PaymentFrequency = "ANUAL"
 )
 
 // PolicyStatus represents a status of a policy

@@ -64,7 +64,7 @@ func (r *VTDRepository) BatchInsert(points []models.VTDPoint) error {
 
 	// Prepare insert statement
 	sql := `
-	INSERT INTO vtd_vector (
+	INSERT OR REPLACE INTO vtd_vector (
 		year, month, period, rate, publication_date
 	) VALUES (?, ?, ?, ?, ?)`
 
@@ -92,10 +92,10 @@ func (r *VTDRepository) InsertVector(vector models.VTDVector) error {
 	points := make([]models.VTDPoint, len(vector.Rates))
 	for i := range vector.Rates {
 		points[i] = models.VTDPoint{
-			Year:           vector.Year,
-			Month:          vector.Month,
-			Period:         vector.Rates[i].Period,
-			Rate:           vector.Rates[i].Rate,
+			Year:            vector.Year,
+			Month:           vector.Month,
+			Period:          vector.Rates[i].Period,
+			Rate:            vector.Rates[i].Rate,
 			PublicationDate: vector.PublicationDate,
 		}
 	}
@@ -137,9 +137,9 @@ func (r *VTDRepository) GetVector(year, month int) (*models.VTDVector, error) {
 	defer rows.Close()
 
 	vector := &models.VTDVector{
-		Year:   year,
-		Month:  month,
-		Rates:  make([]models.VTDPoint, 0),
+		Year:  year,
+		Month: month,
+		Rates: make([]models.VTDPoint, 0),
 	}
 
 	for rows.Next() {
@@ -221,6 +221,7 @@ func (r *VTDRepository) GetAvailableYears() ([]int, error) {
 
 	var years []int
 	for rows.Next() {
+
 		var year int
 		if err := rows.Scan(&year); err != nil {
 			return nil, err
@@ -229,6 +230,32 @@ func (r *VTDRepository) GetAvailableYears() ([]int, error) {
 	}
 
 	return years, nil
+}
+
+// GetAllVectorDates returns every (year, month) combination that has a VTD
+// vector, ordered chronologically. It is used for sensitivity analysis over
+// the available discount curves.
+func (r *VTDRepository) GetAllVectorDates() ([]string, error) {
+	sql := `
+	SELECT DISTINCT year, month
+	FROM vtd_vector
+	ORDER BY year ASC, month ASC`
+
+	rows, err := r.db.Query(sql)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var dates []string
+	for rows.Next() {
+		var year, month int
+		if err := rows.Scan(&year, &month); err != nil {
+			return nil, err
+		}
+		dates = append(dates, fmt.Sprintf("%04d-%02d", year, month))
+	}
+	return dates, nil
 }
 
 // GetAvailableMonths returns list of months for a given year
