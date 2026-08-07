@@ -162,10 +162,20 @@ func computeRISReserve(calc *calculator.ReserveCalculator, rb risBuildResult, p 
 		currentYear = 0
 	}
 
-	// Instalar VTD del mes de emisión si la cohorte lo requiere y está
-	// disponible en la DB. Para cohortes pre-dic2020 sin VTD histórico, cae al
-	// flat rate (con la limitación documentada).
-	installIssuanceVTD(calc, rb.contractDate)
+	// Tasa de descuento por cohorte (NCG 318):
+	//   - pre-2012 y 2012-may2015: min(TM, TV) de emisión (TasaCostoEmision/TasaVenta)
+	//   - jun2015-nov2020: TCj (TIR con VTD del mes de emisión)
+	//   - post-dic2020: min(TVj, TCj)
+	//
+	// Para cohortes con VTD histórico disponible (post-sep2020) instalamos la
+	// curva VTD del mes de emisión y calculamos la TCj (TIR flat, NCG 318 Anexo),
+	// que pasa a ser la tasa de "bautizo" con la que se descuenta la reserva. Para
+	// el resto, cae al flat rate min(TM, TV) del RIS (solo correcto para 2012-may2015).
+	if vtdOK := installIssuanceVTD(calc, rb.contractDate); vtdOK {
+		if tcj, err := calc.ComputeTCj(rb.pol, rb.grupo, rentaAnual); err == nil {
+			calc.SetTasaDescuento(tcj)
+		}
+	}
 
 	if rb.causanteVivo && rb.grupo.Causante != nil && rb.grupo.Causante.TablaAsignada != "" {
 		result, err := calc.CalculateAt(rb.pol, rb.grupo, rentaAnual, currentYear)
@@ -205,18 +215,24 @@ func computeRISReserve(calc *calculator.ReserveCalculator, rb risBuildResult, p 
 // falls back to the flat min(TM, TV) rate set in the policy.
 //
 // The cutoff 2020-09-01 reflects the earliest VTD vector currently loaded.
-func installIssuanceVTD(calc *calculator.ReserveCalculator, contractDate time.Time) {
+// Returns true when the issuance-month VTD curve was installed (so the caller
+// can compute the TCj TIR), false otherwise.
+func installIssuanceVTD(calc *calculator.ReserveCalculator, contractDate time.Time) bool {
 	vtdCutoff := time.Date(2020, 9, 1, 0, 0, 0, 0, time.UTC)
 	tcjCutoff := time.Date(2015, 6, 1, 0, 0, 0, 0, time.UTC)
 	if contractDate.Before(tcjCutoff) || contractDate.Before(vtdCutoff) {
 		// Pre-TCj regime or VTD unavailable: use flat rate from policy.
 		// Reset any previously installed curve so the next policy starts clean.
 		calc.ClearVTD()
-		return
+		calc.ClearTasaDescuento()
+		return false
 	}
 	if !calc.LoadVTDForCached(contractDate.Year(), int(contractDate.Month())) {
 		calc.ClearVTD()
+		calc.ClearTasaDescuento()
+		return false
 	}
+	return true
 }
 
 // risRolFor maps the C1194 TIPO-BENEFICIARIO code to our internal role.

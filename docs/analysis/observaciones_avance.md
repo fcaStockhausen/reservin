@@ -227,6 +227,20 @@ Referencia completa de fórmulas: `docs/analysis/formulas_cnu_nt9.md`.
   del cónyuge, así que el VPP usa el pct reportado directamente. El step-up
   queda solo como parte del cálculo del CNU de pensión inicial.
 
+### 2.12 TCj (tasa de bautizo flat, NCG 318 Anexo) — en validación
+- Antes: se instalaba el VTD del mes de emisión como CURVA y se descontaba cada
+  flujo con su tasa de período.
+- Ahora: se calcula la **TCj = TIR flat** que reproduce el VPPj del VTD
+  (`Σ FP_i × D_vtd(i) = Σ FP_i / (1+TCj)^i`), y la reserva se descuenta a TCj
+  flat — que es lo que manda la normativa (tasa de bautizo por toda la vigencia).
+- `ReserveCalculator.ComputeTCj`: proyecta a la emisión (currentYear=0) con el
+  VTD instalado, usa `TotalReserve + 11/24` como target del VPPj, y biseca TCj.
+- La tasa flat override vive en `FlowProjector.flatRate` (`SetTasaDescuento`),
+  con precedencia sobre VTD y la tasa efectiva de la póliza.
+- **Impacto**: post-2012 +0.16% → **+0.04%** (cuasi perfecto), global
+  +6.02% → **+5.94%**. Costo: ~2 proyecciones por póliza (emisión + valuación),
+  50K en ~87s.
+
 ---
 
 ## 3. RESULTADO DE LA VALIDACIÓN (10K pólizas, post-fixes)

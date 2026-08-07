@@ -81,6 +81,102 @@ func (rc *ReserveCalculator) ClearVTD() {
 	rc.projector.SetDiscountRates(nil)
 }
 
+// SetTasaDescuento overrides the discount rate with a flat rate (e.g. the
+// bautizo rate TCj, NCG 318). Takes precedence over VTD and the policy rate.
+func (rc *ReserveCalculator) SetTasaDescuento(rate decimal.Decimal) {
+	rc.projector.SetTasaDescuento(rate)
+}
+
+// ClearTasaDescuento removes the flat-rate override, reverting to VTD/policy
+// rate behavior.
+func (rc *ReserveCalculator) ClearTasaDescuento() {
+	rc.projector.ClearTasaDescuento()
+}
+
+// ComputeTCj computes the Tasa de Costo Equivalente (TCj) for the policy per
+// NCG 318 Anexo §1: the flat rate (TIR) that reproduces the present value of
+// the probabilistic flows when discounted with the VTD curve of the issuance
+// month.
+//
+//	VPPj = Σ_i FP_i × D_vtd(i) = Σ_i FP_i / (1 + TCj)^i
+//
+// The reserve is then discounted at TCj (flat) for the rest of the policy's
+// life, per the "bautizo" principle.
+//
+// Precondition: the issuance-month VTD curve must be installed (LoadVTDFor /
+// LoadVTDForCached) before calling this.
+func (rc *ReserveCalculator) ComputeTCj(
+	policy models.Policy,
+	grupo *models.GrupoFamiliar,
+	rentaAnual decimal.Decimal,
+) (decimal.Decimal, error) {
+	// Ensure tables + mejoramiento, same as CalculateAt.
+	tablesNeeded := rc.collectTables(grupo)
+	for _, tableName := range tablesNeeded {
+		if err := rc.mortality.EnsureLoaded(rc.mortRepo, tableName); err != nil {
+			return decimal.Zero, fmt.Errorf("loading mortality tables: %w", err)
+		}
+		if rc.mejorar {
+			if err := rc.mortality.EnsureMejoramiento(rc.mortRepo, tableName); err != nil {
+				return decimal.Zero, fmt.Errorf("loading improvement factors for %s: %w", tableName, err)
+			}
+		}
+	}
+	if rc.mejorar && !policy.FechaInicio.IsZero() {
+		rc.mortality.SetAñoCálculo(policy.FechaInicio.Year())
+	} else if !rc.mejorar {
+		rc.mortality.SetAñoCálculo(2020)
+	}
+
+	// Proyectar a la emisión (currentYear=0) con el VTD instalado. Como la
+	// tasa flat override no está seteada y el VTD está instalado, Project
+	// descuenta cada flujo con su tasa VTD, así que TotalReserve + adjustment
+	// es el VPPj objetivo (la mensualización 11/24 se resta una vez y no
+	// depende de la tasa, se re-agrega para el TIR).
+	res, err := rc.projector.Project(policy, grupo, rentaAnual, decimal.Zero, 0)
+	if err != nil {
+		return decimal.Zero, fmt.Errorf("compute tcj: %w", err)
+	}
+	adjustment := rentaAnual.Mul(decimal.NewFromFloat(11.0 / 24.0))
+	target := res.TotalReserve.Add(adjustment)
+	if target.LessThanOrEqual(decimal.Zero) {
+		return decimal.Zero, fmt.Errorf("compute tcj: zero present value")
+	}
+
+	// Bisección sobre TCj: Σ FP_i / (1+r)^i = target. PV decrece con r, así que
+	// si pv(mid) > target la raíz está más arriba. 40 iteraciones dan ~1e-12.
+	lo := decimal.NewFromFloat(0.0001)
+	hi := decimal.NewFromFloat(0.25)
+	for i := 0; i < 40; i++ {
+		mid := lo.Add(hi).Div(decimal.NewFromInt(2))
+		pv := pvFlows(res.Flows, mid)
+		if pv.GreaterThan(target) {
+			lo = mid
+		} else {
+			hi = mid
+		}
+	}
+	return lo.Add(hi).Div(decimal.NewFromInt(2)), nil
+}
+
+// pvFlows returns Σ FP_i / (1+r)^i for a set of flows. The discount factor is
+// accumulated with multiplications (flows are in ascending period order).
+func pvFlows(flows []MemberFlow, rate decimal.Decimal) decimal.Decimal {
+	one := decimal.NewFromInt(1)
+	inv := one.Div(one.Add(rate))
+	pv := decimal.Zero
+	df := one
+	last := 0
+	for _, f := range flows {
+		for j := last; j < f.Period; j++ {
+			df = df.Mul(inv)
+		}
+		last = f.Period
+		pv = pv.Add(f.FlowAmount.Mul(df))
+	}
+	return pv
+}
+
 // LoadVTDForCached installs the VTD curve for a given issuance month using an
 // in-memory cache keyed by "YYYY-MM". When the same month recurs across many
 // policies (typical in the validator), only the first call hits the DB.

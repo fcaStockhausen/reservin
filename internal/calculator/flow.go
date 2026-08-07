@@ -47,6 +47,10 @@ type FlowProjector struct {
 	// (period k discounted at discountRates[k]). When empty, a flat rate is
 	// used (the discountRate passed to Project).
 	discountRates []decimal.Decimal
+	// flatRate, when set, overrides the discount rate entirely (NCG 318: the
+	// reserve is discounted at the bautizo rate TCj, a flat rate). It takes
+	// precedence over both the VTD curve and the policy's effective rate.
+	flatRate *decimal.Decimal
 }
 
 // NewFlowProjector creates a projector with the given mortality engine.
@@ -61,9 +65,24 @@ func (fp *FlowProjector) SetDiscountRates(rates []decimal.Decimal) {
 	fp.discountRates = rates
 }
 
-// rateFor returns the discount rate applied to period k: the VTD curve when
-// available, otherwise the flat discountRate.
+// SetTasaDescuento overrides the discount rate with a flat rate (e.g. the
+// bautizo rate TCj per NCG 318). It takes precedence over the VTD curve and
+// the policy's effective rate.
+func (fp *FlowProjector) SetTasaDescuento(rate decimal.Decimal) {
+	fp.flatRate = &rate
+}
+
+// ClearTasaDescuento removes the flat-rate override.
+func (fp *FlowProjector) ClearTasaDescuento() {
+	fp.flatRate = nil
+}
+
+// rateFor returns the discount rate applied to period k: the flat override
+// when set, else the VTD curve when available, else the flat discountRate.
 func (fp *FlowProjector) rateFor(k int, discountRate decimal.Decimal) decimal.Decimal {
+	if fp.flatRate != nil {
+		return *fp.flatRate
+	}
 	if len(fp.discountRates) == 0 {
 		return discountRate
 	}
