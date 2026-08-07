@@ -24,6 +24,11 @@ comparativo_*.xlsx
 # Large data files (raw sources, kept out of the repo)
 data/*.zip
 data/*.vta
+
+# SQLite WAL/shm sidecar files (transient)
+data/*.db-shm
+data/*.db-wal
+
 /tmp/
 
 # Empty scaffolding dirs
