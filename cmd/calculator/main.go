@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
@@ -37,6 +38,7 @@ func main() {
 	seedFlag := flag.Bool("seed-demo", false, "Create a demo policy with family group")
 	familiaFlag := flag.String("familia", "", "Show family group for policy ID")
 	calcFlag := flag.String("calc", "", "Calculate reserve for policy ID")
+	cnuFlag := flag.String("cnu", "", "Calculate CNU total (NT9) for policy ID")
 	exportFlag := flag.String("calc-export", "", "Calculate and export flows to Excel (policy ID)")
 	scenarioFlag := flag.String("scenario", "", "Run simulation from YAML file or builtin name")
 	scenarioAllFlag := flag.Bool("scenario-all", false, "Run all builtin scenarios and compare")
@@ -93,6 +95,8 @@ func main() {
 		handleSeedDemo(db)
 	case *calcFlag != "":
 		handleCalc(db, *calcFlag, "")
+	case *cnuFlag != "":
+		handleCNU(db, *cnuFlag)
 	case *exportFlag != "":
 		handleCalc(db, *exportFlag, "export")
 	case *scenarioFlag != "":
@@ -939,5 +943,52 @@ func printHistogram(results []portfolio.BatchResult) {
 			bar = repeat("#", barLen)
 		}
 		fmt.Printf("  %3d%%-%3d%%: %4d %s\n", lo, hi, count, bar)
+	}
+}
+
+// handleCNU computes and prints the CNU total (NT9) for a policy.
+func handleCNU(db *database.DB, polizaIDStr string) {
+	polizaID, err := strconv.Atoi(polizaIDStr)
+	if err != nil {
+		log.Fatalf("Invalid policy ID: %q", polizaIDStr)
+	}
+
+	policyRepo := database.NewPolicyRepository(db.DB)
+	policy, err := policyRepo.GetByID(polizaID)
+	if err != nil {
+		log.Fatalf("Policy not found: %v", err)
+	}
+
+	benRepo := database.NewBeneficiarioRepository(db.DB)
+	grupo, err := benRepo.GetGrupoFamiliar(polizaID)
+	if err != nil {
+		log.Fatalf("Failed to get family group: %v", err)
+	}
+	if grupo.Causante == nil {
+		log.Fatalf("Policy has no causante in family group")
+	}
+
+	mortRepo := database.NewMortalityRepository(db.DB)
+	calc := calculator.NewReserveCalculator(mortRepo, database.NewVTDRepository(db.DB))
+
+	rate := policy.GetEffectiveDiscountRate()
+	res, err := calc.ComputeCNU(grupo, 0, rate)
+	if err != nil {
+		log.Fatalf("CNU calculation failed: %v", err)
+	}
+
+	fmt.Printf("CNU total (NT9) póliza %d | tasa %.4f%%\n", polizaID, rate.Mul(decimal.NewFromInt(100)).InexactFloat64())
+	fmt.Printf("  causante: %.4f\n", res.Causante.InexactFloat64())
+	if !res.Conyuge.IsZero() {
+		fmt.Printf("  cónyuge:  %.4f\n", res.Conyuge.InexactFloat64())
+	}
+	for i, h := range res.Hijos {
+		fmt.Printf("  hijo %d:   %.4f\n", i+1, h.InexactFloat64())
+	}
+	fmt.Printf("  TOTAL:    %.4f\n", res.Total.InexactFloat64())
+
+	if !res.Total.IsZero() && policy.CapitalAsegurado.GreaterThan(decimal.Zero) {
+		pension := policy.CapitalAsegurado.Div(res.Total.Mul(decimal.NewFromInt(12)))
+		fmt.Printf("Pensión mensual (saldo / (cnu×12)): %.2f UF\n", pension.InexactFloat64())
 	}
 }

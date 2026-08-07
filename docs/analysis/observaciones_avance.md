@@ -207,6 +207,26 @@ Referencia completa de fórmulas: `docs/analysis/formulas_cnu_nt9.md`.
   causante en `Project`.
 - El loader de mortalidad ahora extrae las columnas anuales (2021-2036) del xlsx.
 
+### 2.10 Límite de hijos a 24 años (NT9 ec.13/15/19/20)
+- Las ecuaciones de hijos de la NT9 suman la anualidad solo hasta `t = 23 - h_j`
+  (el hijo pierde el derecho a los 24: 18, o 24 si estudiante).
+- Fix en `FlowProjector.Project`: cada `RolHijo` tiene `maxK = 24 - startAge`;
+  sus flujos se cortan en `k > maxK`.
+- **Impacto**: `con_hijos` bajó de +21.9% a +2.7%, `conyuge_hijos` de +11.1% a
+  +3.6%, global de +8.5% a +6.0%.
+
+### 2.11 CNU total (NT9 §V) — comando `-cnu`
+- Nuevo `internal/calculator/cnu.go`: `ReserveCalculator.ComputeCNU` implementa
+  las ec. 9-16 (afiliado soltero, cónyuge s/c hijos, hijos c/s cónyuge).
+- Porcentajes del Cuadro 1: cónyuge 60% (sin hijos) / 50% (con hijos), hijo 15%
+  (con cónyuge) o 15% + 50%/J (sin cónyuge).
+- Incluye el término step-up del 10% (ec. 12) y la mensualización 11/24.
+- Uso: `./reservin -cnu <poliza_id>` → imprime CNU por miembro + pensión.
+- Nota: **el step-up del 10% no mejora la validación RIS** (testeado: empeora
+  `conyuge_hijos`). El `PorcentajeRenta` del RIS ya codifica el monto efectivo
+  del cónyuge, así que el VPP usa el pct reportado directamente. El step-up
+  queda solo como parte del cálculo del CNU de pensión inicial.
+
 ---
 
 ## 3. RESULTADO DE LA VALIDACIÓN (10K pólizas, post-fixes)
