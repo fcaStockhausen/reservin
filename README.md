@@ -5,6 +5,7 @@
 [![Go Version](https://img.shields.io/badge/Go-1.25-00ADD8?logo=go&logoColor=white)](https://go.dev)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Go Report Card](https://goreportcard.com/badge/github.com/fcaStockhausen/reservin)](https://goreportcard.com/report/github.com/fcaStockhausen/reservin)
+[![Benchmark](https://img.shields.io/badge/performance-~1.3K%20p%C3%B3lizas%2Fs-blue)](#performance)
 
 Motor actuarial en Go para calcular reservas técnicas (VPPj) de pólizas de renta
 vitalicia del sistema chileno. Sigue la normativa de la CMF (NCG 318, Circular
@@ -170,6 +171,24 @@ Componentes normativos implementados:
 
 Para más detalle ver [AGENTS.md](AGENTS.md) (contexto normativo + decisiones de
 diseño) y [docs/analysis/observaciones_avance.md](docs/analysis/observaciones_avance.md).
+
+## Performance
+
+El motor proyecta ~1.300 pólizas por segundo en validación RIS completa (proyección de flujos con tablas, mejoramiento AAx, VTD por mes de emisión y comparación contra reservas reportadas).
+
+| Muestra  | Procesadas | Wall time | Throughput       |
+|----------|------------|-----------|------------------|
+| 10.000   | 8.317      | 7,3 s     | ~1.140 pólizas/s |
+| 50.000   | 41.439     | 31,8 s    | ~1.303 pólizas/s |
+
+Medido en Apple Silicon (M-series). Para reproducir:
+
+```bash
+go build -o reservin ./cmd/calculator
+time ./reservin -validate-ris /path/to/ris20251231.vta -sample 50000
+```
+
+Los cuellos de botella son: stream+parse del RIS fijo ancho, y el `LoadVTDFor` por mes de emisión (mitigado con caché `YYYY-MM` en `ReserveCalculator.vtdCache`).
 
 ## Documentación
 
