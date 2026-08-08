@@ -51,12 +51,25 @@ func main() {
 	vtdSensFlag := flag.Bool("vtd-sens", false, "Measure VTD sensitivity: reserve under every available VTD curve")
 	noMejoramientoFlag := flag.Bool("no-mejoramiento", false, "Disable mortality improvement (Circular 2332) for sensitivity analysis")
 	debugSVSFlag := flag.String("debug-svs", "", "RIS validation: dump full per-person breakdown for a single policy (SVS number)")
+	risDumpFlag := flag.String("ris-dump", "", "Canonical RIS reader: dump policies from .vta (see docs/ris_reader.md)")
+	risSVSFlag := flag.String("svs", "", "RIS reader: only dump this SVS policy")
+	risNFlag := flag.Int("n", 0, "RIS reader: max policies to dump (0 = 10, negative = unlimited)")
+	risFilterFlag := flag.String("filter", "", "RIS reader: only dump matching policies (dead|alive)")
+	risJSONFlag := flag.Bool("json", false, "RIS reader: emit NDJSON (one policy per line)")
+	risLegendFlag := flag.Bool("legend", false, "RIS reader: print field layout + code dictionary and exit")
+	risScanCodesFlag := flag.Bool("scan-codes", false, "RIS reader: enumerate observed code values in the file")
 
 	flag.Parse()
 
 	// Handle version flag
 	if *versionFlag {
 		fmt.Printf("%s version %s\n", appName, version)
+		os.Exit(0)
+	}
+
+	// The canonical RIS reader needs no config nor DB.
+	if *risDumpFlag != "" || *risLegendFlag || *risScanCodesFlag {
+		risDump(*risDumpFlag, *risSVSFlag, *risNFlag, *risFilterFlag, *risJSONFlag, *risLegendFlag, *risScanCodesFlag)
 		os.Exit(0)
 	}
 
@@ -129,6 +142,8 @@ func main() {
 		fmt.Println("  -scenario-all       Run all builtin scenarios and compare")
 		fmt.Println("  -gen-ris <id>       Generate RIS file for policy")
 		fmt.Println("  -stress <N>         Generate N policies and stress test")
+		fmt.Println("  -ris-dump <path>    Canonical RIS reader (see docs/ris_reader.md)")
+		fmt.Println("  -legend             RIS reader: print code dictionary and exit")
 		fmt.Println("  -version           Show version")
 		fmt.Println("  -config <path>     Configuration file path")
 	}

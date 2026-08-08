@@ -53,6 +53,13 @@ gofmt -w internal/ cmd/
 # Debug de una póliza específica
 ./reservas -validate-ris /tmp/ris_extract/ris20251231.vta -sample 20000 -debug-svs 099747
 
+# Lectura canónica del RIS (no requiere DB; ver docs/ris_reader.md)
+./reservas -ris-dump /tmp/ris_extract/ris20251231.vta -svs 099747   # una póliza
+./reservas -ris-dump <archivo> -filter dead -n 5                     # causantes fallecidos
+./reservas -ris-dump <archivo> -json | jq .                          # NDJSON
+./reservas -legend                                                   # diccionario de códigos C1194
+./reservas -ris-dump <archivo> -scan-codes                           # códigos observados
+
 # Sensibilidad (sin mejoramiento AAx)
 ./reservas -validate-ris ... -no-mejoramiento
 ```
@@ -67,6 +74,7 @@ internal/calculator/        # MOTOR
 internal/models/
   tabla.go                  #   Cuadro 4 (SelectBaseTable, cuadro4Table)
   ris.go                    #   RISPerson (campos C1194), ReserveForComparison
+  ris_dict.go               #   Diccionario de códigos C1194 (RISDictionary)
   policy.go                 #   Policy.GetEffectiveDiscountRate (min TM/TC)
   beneficiario.go           #   Roles, InvNo/InvTotal/InvParcial
 internal/loader/
@@ -81,8 +89,17 @@ internal/database/
 cmd/calculator/
   main.go                   #   CLI flags
   ris_validate.go           #   validateRIS, computeRISReserve, buildGrupoFromRIS
+  ris_dump.go               #   Lector canónico RIS (-ris-dump, -legend, -scan-codes)
   vtd_sens.go               #   Sensibilidad al VTD
 ```
+
+## Lector canónico del RIS
+
+`./reservas -ris-dump <archivo>` + `-legend` es la forma canónica de leer el
+RIS y decodificar sus códigos. **Úsalo en vez de escribir scripts ad-hoc.**
+Documentación completa: `docs/ris_reader.md`. El diccionario vive en
+`internal/models/ris_dict.go` (fuentes: C1194 1995 y cir_1772/2184/2208/2308
+en `docs/normativo/`; campos marcados `SEIL` pendientes de confirmar).
 
 ## Contexto normativo clave
 

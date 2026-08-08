@@ -19,16 +19,18 @@ reportan las compañías a la CMF.
 
 ## Estado de la validación
 
-Validación contra **RIS completo 2025-12-31** (50K muestra, 41K procesadas):
+Validación contra **RIS 2025-12-31** (50K muestra, 44K procesadas):
 
 | Tipo de familia            | Diferencia vs reportado |
 |----------------------------|-------------------------|
-| causante solo              | **+2.2%** ✓             |
-| con cónyuge                | **+2.4%** ✓             |
-| con hijos                  | **+2.7%** ✓             |
-| cónyuge + hijos            | **+3.6%** ✓             |
-| sin causante vivo          | +26.3%                  |
-| **Global**                 | **+6.0%**               |
+| causante solo              | **+0.2%** ✓             |
+| con cónyuge                | **+0.4%** ✓             |
+| con hijos                  | **-1.5%** ✓             |
+| cónyuge + hijos            | **-0.1%** ✓             |
+| sin causante vivo          | +21.8%                  |
+| **Global**                 | **+3.3%**               |
+
+Por estrato: post-2012 **-1.1%**, 2005-2011 **+17.2%**, pre-2005 **+14.1%**.
 
 El motor está calibrado para pólizas modernas (post-sep-2020 con VTD del mes de
 emisión: **gap <1% por póliza**). El gap residual se concentra en **stock
@@ -98,13 +100,20 @@ Todos los comandos son flags del binario `reservin`:
 
 # Sensibilidad al VTD (todas las curvas cargadas)
 ./reservin -validate-ris ... -vtd-sens -sample 200
+
+# Lector canónico del RIS (no requiere DB — ver docs/ris_reader.md)
+./reservin -ris-dump /path/to/ris20251231.vta -svs 099747   # una póliza decodificada
+./reservin -ris-dump <archivo> -filter dead -n 5            # causantes fallecidos
+./reservin -ris-dump <archivo> -json | jq .                 # NDJSON para scripts
+./reservin -legend                                          # diccionario de códigos C1194
+./reservin -ris-dump <archivo> -scan-codes                  # códigos observados
 ```
 
 ## Estructura del proyecto
 
 ```
 cmd/
-  calculator/         # binario principal (main.go + ris_validate.go + vtd_sens.go)
+  calculator/         # binario principal (main.go, ris_validate.go, ris_dump.go, vtd_sens.go)
 config/               # config.json
 data/
   reservas.db         # SQLite (tablas, VTD, factores, resultados)
@@ -113,7 +122,8 @@ data/
   migrations/         # esquema SQL versionado
 docs/
   analysis/           # observaciones_avance.md, validacion_ris_1194.md
-  normativo/          # PDFs (NCG 318, Circular 2332/1512/491, NT9, CMF)
+  normativo/          # PDFs (NCG 318, Circular 2332/1512/491, NT9, C1194)
+  ris_reader.md       # documentación del lector canónico RIS
   ris_simulado_diseno.md
   normative_framework.md
   technical_specifications.md
@@ -122,11 +132,11 @@ internal/
   calculator/         # motor: ReserveCalculator, FlowProjector, MortalityEngine
   database/           # repos SQLite (mortality, vtd, factor_mejoramiento, migrations)
   loader/             # parsers: RIS C1194, mortality xlsx, VTD, Circular 491
-  models/             # Policy, GrupoFamiliar, Beneficiario, RISPerson, tablas (Cuadro 4)
+  models/             # Policy, GrupoFamiliar, Beneficiario, RISPerson, ris_dict, tablas (Cuadro 4)
   portfolio/          # generador de portafolios sintéticos
   scenario/           # simulador de escenarios
   config/             # lectura de config.json
-scripts/              # utilidades varias
+scripts/              # utilidades varias (scrape_vtd_cmf.py)
 ```
 
 ## Datos de origen
@@ -192,17 +202,19 @@ go build -o reservin ./cmd/calculator
 time ./reservin -validate-ris /path/to/ris20251231.vta -sample 1000000
 ```
 
-El gap global del archivo completo es **+8,68%** vs reportado (pre-2005 +29,6%,
-post-2012 +2,9%) — ver [Estado de la validación](#estado-de-la-validación).
+El gap global de una corrida completa del archivo fue **+8,68%** vs reportado
+(pre-TM-histórica); tras el fix de la TM por cohorte la muestra 50K baja a
+**+3,27%** (post-2012 -1,1%) — ver [Estado de la validación](#estado-de-la-validación).
 
 ## Documentación
 
 - [docs/analysis/observaciones_avance.md](docs/analysis/observaciones_avance.md) — estado actual, evolución del gap, próximos pasos
 - [docs/analysis/validacion_ris_1194.md](docs/analysis/validacion_ris_1194.md) — análisis de la validación
+- [docs/ris_reader.md](docs/ris_reader.md) — lector canónico del RIS + diccionario de códigos C1194
 - [docs/ris_simulado_diseno.md](docs/ris_simulado_diseno.md) — diseño del parser RIS
 - [docs/normative_framework.md](docs/normative_framework.md) — marco normativo
 - [docs/mortality_tables_guide.md](docs/mortality_tables_guide.md) — guía de tablas
-- [docs/normativo/](docs/normativo/) — PDFs originales (NCG, Circulares, NT9)
+- [docs/normativo/](docs/normativo/) — PDFs originales (NCG, Circulares, NT9, C1194)
 - [AGENTS.md](AGENTS.md) — guía para contribuir (convenciones, bugs corregidos, decisiones)
 
 ## Tests
